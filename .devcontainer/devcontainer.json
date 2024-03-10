@@ -19,7 +19,8 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-			   "ms-azuretools.vscode-docker"     // Tools for working with Dockerfiles
+				"ms-azuretools.vscode-docker",
+				"rust-lang.rust-analyzer"
 			],
 			"settings": {
 				"editor.formatOnSave": true,
