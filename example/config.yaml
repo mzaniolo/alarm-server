@@ -1,0 +1,5 @@
+sub:
+  alarm:
+    set: a = 1
+    unset: a = 0
+    sevetity: 0
