@@ -1,7 +1,7 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/cpp
 {
-	"name": "C++",
+	"name": "Rust",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
@@ -19,10 +19,16 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				               "ms-azuretools.vscode-docker",      // Tools for working with Dockerfiles
-				               "ms-vscode.cpptools-extension-pack", // Collection of C and C++ extensions, including CMake
-								"ms-vscode.makefile-tools"
-							]
+			   "ms-azuretools.vscode-docker"     // Tools for working with Dockerfiles
+			],
+			"settings": {
+				"editor.formatOnSave": true,
+				"terminal.integrated.shell.linux": "/usr/bin/zsh",
+				"files.exclude": {
+					"**/CODE_OF_CONDUCT.md": true,
+					"**/LICENSE": true
+				}
+			}
 		}
 	},
 
