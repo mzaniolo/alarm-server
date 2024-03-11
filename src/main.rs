@@ -1,6 +1,10 @@
-
-
 fn main() {
     println!("Hello, world!");
-    println!("config: {:?}", alarm_server::load_config("example/config.yaml"));
+
+    let config = alarm_server::load_config("example/config.yaml");
+    println!("config: {:?}", config);
+
+    let alms = alarm_server::create_alarms(config);
+
+    println!("alarms: {:?}", alms)
 }

@@ -1,5 +1,22 @@
-sub:
-  alarm:
-    set: a = 1
-    unset: a = 0
+sub1:
+  alarm1:
+    set: 1
+    reset: 0
     sevetity: 0
+    meas: my_path/my_meas
+  alarm2:
+    set: 1
+    reset: 0
+    sevetity: 0
+    meas: my_path/my_meas
+sub2:
+  alarm1:
+    set: 0
+    reset: 1
+    sevetity: 0
+    meas: my_path2/my_meas
+  alarm2:
+    set: 1
+    reset: -1
+    sevetity: 0
+    meas: my_path2/my_meas
