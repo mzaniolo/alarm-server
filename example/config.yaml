@@ -7,7 +7,7 @@ sub1:
   alarm2:
     set: 1
     reset: 0
-    sevetity: 0
+    sevetity: 2
     meas: my_path/my_meas
 sub2:
   alarm1:
@@ -18,5 +18,5 @@ sub2:
   alarm2:
     set: 1
     reset: -1
-    sevetity: 0
+    sevetity: 1
     meas: my_path2/my_meas

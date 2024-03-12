@@ -27,19 +27,26 @@ pub struct Alarm {
 
 impl Alarm {
     pub async fn run(&mut self) {
-        while let Ok(value) = self.rx.as_mut().unwrap().recv().await {
+        println!("init run");
+        let rx = self.rx.as_mut().unwrap();
+        println!("waiting on channel!");
+        while let Ok(value) = rx.recv().await {
             if value == self.set {
                 println!(
-                    "alarm {} is set with severity '{:?}'!",
+                    "alarm {} is set with severity '{:?}' - value: {value}!",
                     self.path, self.sevetity
                 );
             } else if value == self.reset {
                 println!(
-                    "alarm {} is reset with severity '{:?}'!",
+                    "alarm {} is reset with severity '{:?}' - value: {value}!",
                     self.path, self.sevetity
                 );
             }
         }
+    }
+
+    pub fn subscribe(&mut self, rx: broadcast::Receiver<i64>) {
+        self.rx = Some(rx);
     }
 }
 
