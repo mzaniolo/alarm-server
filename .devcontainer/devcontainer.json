@@ -21,7 +21,8 @@
 		"vscode": {
 			"extensions": [
 				"ms-azuretools.vscode-docker",
-				"rust-lang.rust-analyzer"
+				"rust-lang.rust-analyzer",
+				"streetsidesoftware.code-spell-checker"
 			],
 			"settings": {
 				"editor.formatOnSave": true,
