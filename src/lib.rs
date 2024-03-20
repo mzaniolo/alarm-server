@@ -25,9 +25,9 @@ pub fn create_alarms(config: Yaml) -> Vec<alarm::Alarm> {
                             .as_i64()
                             .expect("Alarm need field 'sevetity'")
                         {
-                            2 => alarm::AlarmSevetity::High,
-                            1 => alarm::AlarmSevetity::Medium,
-                            0 => alarm::AlarmSevetity::Low,
+                            2 => alarm::AlarmSeverity::High,
+                            1 => alarm::AlarmSeverity::Medium,
+                            0 => alarm::AlarmSeverity::Low,
                             _ => panic!("Invalid sevetity!"),
                         },
                         String::from(values["meas"].as_str().expect("Alarm need field 'meas'")),

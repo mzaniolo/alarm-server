@@ -1,7 +1,7 @@
 use tokio::sync::broadcast;
 
 #[derive(Debug)]
-pub enum AlarmSevetity {
+pub enum AlarmSeverity {
     High,
     Medium,
     Low,
@@ -12,7 +12,7 @@ pub struct Alarm {
     path: String,
     set: i64,
     reset: i64,
-    severity: AlarmSevetity,
+    severity: AlarmSeverity,
     meas: String,
     rx: Option<broadcast::Receiver<i64>>,
 }
@@ -22,11 +22,11 @@ impl Alarm {
         path: String,
         set: i64,
         reset: i64,
-        severity: AlarmSevetity,
+        severity: AlarmSeverity,
         meas: String,
         rx: Option<broadcast::Receiver<i64>>,
-    ) -> Alarm {
-        Alarm {
+    ) -> Self {
+        Self {
             path: path,
             set: set,
             reset: reset,
