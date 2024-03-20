@@ -1,4 +1,5 @@
-use tokio::sync::broadcast;
+use alarm_server::reader::Reader;
+use tokio::sync::Notify;
 
 #[tokio::main]
 async fn main() {
@@ -7,31 +8,31 @@ async fn main() {
     let config = alarm_server::load_config("example/config.yaml");
     // println!("config: {:?}", config);
 
-    let mut alms = alarm_server::create_alarms(config);
+    let alms = alarm_server::create_alarms(config);
 
     // println!("alarms: {:?}", alms);
 
-    let (tx, _) = broadcast::channel(20);
+    let mut reader = Reader::new(None, None, None, None);
+    if let Err(e) = reader.connect().await {
+        panic!("Couldn't connect to rabbitMQ, {e}")
+    }
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
 
     for mut alm in alms.into_iter() {
-        alm.subscribe(tx.subscribe());
+        alm.subscribe(reader.subscribe(alm.get_meas()).await);
         tasks.push(tokio::spawn(async move {
             alm.run().await;
         }));
     }
 
-    println!("=== Send meas ===");
-
-    tx.send(10);
-    tx.send(0);
-    tx.send(-1);
-    tx.send(1);
+    println!("=== Set reader to receive ===");
+    tokio::spawn( async move {
+        reader.receive().await;
+    });
 
     println!("=== wait tasks ===");
 
-    for task in tasks.into_iter() {
-        task.await;
-    }
+    let guard = Notify::new();
+    guard.notified().await;
 }

@@ -2,8 +2,8 @@ extern crate yaml_rust;
 use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
 
-mod alarm;
-mod reader;
+pub mod alarm;
+pub mod reader;
 
 pub fn load_config(path: &str) -> Yaml {
     let source = fs::read_to_string(path).unwrap();

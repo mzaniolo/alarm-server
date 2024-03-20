@@ -58,4 +58,8 @@ impl Alarm {
     pub fn subscribe(&mut self, rx: broadcast::Receiver<i64>) {
         self.rx = Some(rx);
     }
+
+    pub fn get_meas(&self) -> &str {
+        &self.meas
+    }
 }
