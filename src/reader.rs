@@ -5,12 +5,12 @@ use amqprs::{
         QueueBindArguments, QueueDeclareArguments,
     },
     connection::{Connection, OpenConnectionArguments},
-    error,
 };
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 const CHANNEL_CAPACITY: u16 = 10;
+const EXCHANGE_NAME: &str = "meas_exchange";
 
 pub struct Reader {
     host: String,
@@ -46,7 +46,7 @@ impl Reader {
         }
     }
 
-    pub async fn connect(&mut self) -> Result<(), error::Error> {
+    pub async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.connection = Some(
             Connection::open(&OpenConnectionArguments::new(
                 &self.host,
@@ -71,7 +71,7 @@ impl Reader {
             .register_callback(DefaultChannelCallback)
             .await?;
 
-        self.exchange_name = String::from("meas_exchange");
+        self.exchange_name = String::from(EXCHANGE_NAME);
         let x_type = "direct";
         let x_args = ExchangeDeclareArguments::new(&self.exchange_name, x_type)
             .durable(true)
@@ -147,8 +147,21 @@ impl Reader {
         println!("waiting on data");
         while let Some(msg) = rx.recv().await {
             if let Some(payload) = msg.content {
-                println!(" [x] Received {:?}", std::str::from_utf8(&payload).unwrap());
-                println!("msg basic prop: {:?}", msg.basic_properties.unwrap());
+                let mut meas = String::new();
+                if let Some(deliver) = msg.deliver.as_ref() {
+                    meas = deliver.routing_key().clone();
+                }
+
+                let value: i32 = std::str::from_utf8(&payload).unwrap().parse().unwrap();
+
+                // println!(" [x] Received {value} from {meas}",);
+
+                if let Err(e) = self.map.get(&meas).unwrap().send(value.into()) {
+                    eprintln!(
+                        "Error sending value '{value}' to alarms subscribed to '{meas}' - {e}"
+                    )
+                }
+
                 self.channel
                     .as_ref()
                     .unwrap()

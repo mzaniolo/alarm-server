@@ -5,7 +5,7 @@ use tokio::sync::Notify;
 async fn main() {
     println!("Hello, world!");
 
-    let config = alarm_server::load_config("example/config.yaml");
+    let config = alarm_server::load_config("examples/config.yaml");
     // println!("config: {:?}", config);
 
     let alms = alarm_server::create_alarms(config);
@@ -27,7 +27,7 @@ async fn main() {
     }
 
     println!("=== Set reader to receive ===");
-    tokio::spawn( async move {
+    tokio::spawn(async move {
         reader.receive().await;
     });
 
