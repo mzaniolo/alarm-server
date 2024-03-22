@@ -33,15 +33,15 @@ async fn main() -> Result<(), Box<TError>> {
 
     let routing_keys: Vec<_> = vec!["my_path.my_meas", "my_path2.my_meas"];
 
-    let mut value: i8 = 0;
+    let mut value: i64 = 0;
     let mut flag = false;
 
     let sleep_time = time::Duration::from_millis(500);
     loop {
         for meas in routing_keys.iter() {
-            value = value.overflowing_add(1).0;
+            value += 1;
             if value & 0b100 == 0b100 {
-                value = value.overflowing_add(1).0;
+                value += 1;
             }
             flag = !flag;
 

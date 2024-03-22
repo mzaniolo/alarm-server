@@ -4,6 +4,7 @@ use yaml_rust::{Yaml, YamlLoader};
 
 pub mod alarm;
 pub mod reader;
+pub mod publisher;
 
 pub fn load_config(path: &str) -> Yaml {
     let source = fs::read_to_string(path).unwrap();
