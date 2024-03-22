@@ -1,5 +1,4 @@
-use alarm_server::reader::Reader;
-use tokio::sync::Notify;
+use alarm_server::{publisher::Publisher, reader::Reader};
 
 #[tokio::main]
 async fn main() {
@@ -14,7 +13,8 @@ async fn main() {
 
     let mut reader = Reader::new(None, None, None, None);
     if let Err(e) = reader.connect().await {
-        panic!("Couldn't connect to rabbitMQ, {e}")
+        eprint!("Couldn't connect to rabbitMQ, {e}");
+        return;
     }
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
@@ -33,6 +33,7 @@ async fn main() {
 
     println!("=== wait tasks ===");
 
-    let guard = Notify::new();
-    guard.notified().await;
+    let mut publisher = Publisher::new(None, None);
+
+    publisher.connect().await;
 }

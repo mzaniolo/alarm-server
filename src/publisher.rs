@@ -15,16 +15,14 @@ pub struct Publisher {
     addr: String,
     port: u16,
 
-    listener: Option<TcpListener>,
     clients: Vec<Client>,
 }
 
 impl Publisher {
-    pub async fn new(addr: Option<String>, port: Option<u16>) -> Self {
+    pub fn new(addr: Option<String>, port: Option<u16>) -> Self {
         Self {
             addr: addr.unwrap_or(String::from("127.0.0.1")),
             port: port.unwrap_or(8080),
-            listener: None,
             clients: Vec::new(),
         }
     }
@@ -39,7 +37,7 @@ impl Publisher {
         // Let's spawn the handling of each connection in a separate task.
         while let Ok((stream, addr)) = listener.accept().await {
             let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-            self.clients.push(Client{addr, tx});
+            self.clients.push(Client { addr, tx });
             tokio::spawn(Self::handle_client(stream, addr, rx));
         }
         println!("Server started");
@@ -80,7 +78,7 @@ impl Publisher {
                 val = rx.recv() => {
                     if let Some(val) = val{
                         println!("notifying client of val {val}");
-                        ws_write.send(Message::Text(val)).await;
+                        let _ = ws_write.send(Message::Text(val)).await;
                     }
                 }
             }
