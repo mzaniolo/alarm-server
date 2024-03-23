@@ -3,8 +3,8 @@ use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
 
 pub mod alarm;
-pub mod reader;
 pub mod publisher;
+pub mod reader;
 
 pub fn load_config(path: &str) -> Yaml {
     let source = fs::read_to_string(path).unwrap();
@@ -17,9 +17,9 @@ pub fn create_alarms(config: Yaml) -> Vec<alarm::Alarm> {
     if let Yaml::Hash(ref h) = config {
         for (area, alm) in h {
             if let Yaml::Hash(h) = alm {
-                for (_, values) in h {
+                for (alm_name, values) in h {
                     alarmes.push(alarm::Alarm::new(
-                        format!("{}/{}", area.as_str().unwrap(), area.as_str().unwrap()),
+                        format!("{}/{}", area.as_str().unwrap(), alm_name.as_str().unwrap()),
                         values["set"].as_i64().expect("Alarm need field 'set'"),
                         values["reset"].as_i64().expect("Alarm need field 'reset'"),
                         match values["sevetity"]
@@ -32,7 +32,6 @@ pub fn create_alarms(config: Yaml) -> Vec<alarm::Alarm> {
                             _ => panic!("Invalid sevetity!"),
                         },
                         String::from(values["meas"].as_str().expect("Alarm need field 'meas'")),
-                        None,
                     ))
                 }
             }

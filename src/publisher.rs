@@ -1,14 +1,21 @@
+use crate::alarm;
 use futures_util::{SinkExt, StreamExt};
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc};
-use tokio_tungstenite::tungstenite::Message;
+use tokio::sync::{mpsc, Mutex};
+use tokio_tungstenite::tungstenite::{client, Message};
 
 const CHANNEL_SIZE: usize = 5;
 
-struct Client {
+type Subscriptions = Arc<Mutex<HashMap<String, Vec<Client>>>>;
+
+#[derive(Debug, Clone)]
+pub struct Client {
     addr: SocketAddr,
     tx: mpsc::Sender<String>,
+    // subscriptions: Vec<String>,
 }
 
 pub struct Publisher {
@@ -16,6 +23,7 @@ pub struct Publisher {
     port: u16,
 
     clients: Vec<Client>,
+    subscriptions: Subscriptions,
 }
 
 impl Publisher {
@@ -24,6 +32,7 @@ impl Publisher {
             addr: addr.unwrap_or(String::from("127.0.0.1")),
             port: port.unwrap_or(8080),
             clients: Vec::new(),
+            subscriptions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -37,25 +46,46 @@ impl Publisher {
         // Let's spawn the handling of each connection in a separate task.
         while let Ok((stream, addr)) = listener.accept().await {
             let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-            self.clients.push(Client { addr, tx });
-            tokio::spawn(Self::handle_client(stream, addr, rx));
+            let client = Client { addr, tx };
+            self.clients.push(client.clone());
+            tokio::spawn(Self::handle_client(
+                stream,
+                client,
+                rx,
+                Arc::clone(&self.subscriptions),
+            ));
         }
         println!("Server started");
     }
 
+    async fn subscribe(alm: &str, subscriptions: &Subscriptions, client: Client) {
+        subscriptions
+            .lock()
+            .await
+            .entry(String::from(alm))
+            .or_default()
+            .push(client);
+    }
+
     async fn handle_client(
         raw_stream: TcpStream,
-        addr: SocketAddr,
+        client: Client,
         mut rx: mpsc::Receiver<String>,
+        subscriptions: Subscriptions,
     ) {
-        println!("Incoming TCP connection from: {}", addr);
+        println!("Incoming TCP connection from: {}", client.addr);
 
         let ws_stream = tokio_tungstenite::accept_async(raw_stream)
             .await
             .expect("Error during the websocket handshake occurred");
-        println!("WebSocket connection established: {}", addr);
+        println!("WebSocket connection established: {}", client.addr);
 
         let (mut ws_write, mut ws_read) = ws_stream.split();
+
+        Publisher::subscribe("sub1/alarm1", &subscriptions, client.clone()).await;
+        Publisher::subscribe("sub1/alarm2", &subscriptions, client.clone()).await;
+        Publisher::subscribe("sub2/alarm1", &subscriptions, client.clone()).await;
+        Publisher::subscribe("sub2/alarm2", &subscriptions, client.clone()).await;
 
         loop {
             tokio::select! {
@@ -64,13 +94,13 @@ impl Publisher {
                         Some(msg) => {
                             let msg = msg.unwrap();
                             if msg.is_text() ||msg.is_binary() {
-                                println!("got from {addr} the message: {}", msg.to_string());
+                                println!("got from {} the message: {}", client.addr, msg.to_string());
                             } else if msg.is_close() {
-                                eprintln!("Connection closed by client {addr}");
+                                eprintln!("Connection closed by client {}", client.addr);
                             }
                         }
                         _ => {
-                            eprintln!("Something went wrong with client {addr}");
+                            eprintln!("Something went wrong with client {}", client.addr);
                         }
                     }
 
@@ -83,7 +113,23 @@ impl Publisher {
                 }
             }
         }
+    }
 
-        // Ok(())
+    pub async fn listen_alarms(
+        mut rx: mpsc::Receiver<alarm::AlarmStatus>,
+        subscriptions: Subscriptions,
+    ) {
+        while let Some(alm) = rx.recv().await {
+            println!("got notified by alarm: {:?}", alm);
+            if let Some(clients) = subscriptions.lock().await.get(&alm.meas) {
+                for client in clients.iter() {
+                    let _ = client.tx.send(std::format!("{:#?}", alm)).await;
+                }
+            }
+        }
+    }
+
+    pub fn get_subscriptions(&self) -> Subscriptions {
+        Arc::clone(&self.subscriptions)
     }
 }
