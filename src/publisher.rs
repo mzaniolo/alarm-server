@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
-use tokio_tungstenite::tungstenite::{client, Message};
+use tokio_tungstenite::tungstenite::Message;
 
 const CHANNEL_SIZE: usize = 5;
 
