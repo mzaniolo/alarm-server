@@ -23,24 +23,28 @@ struct AlarmClient {
 #[wasm_bindgen]
 impl AlarmClient {
     #[wasm_bindgen]
-    pub fn connect(&mut self, addr: &str, port: i32, ssl: bool) -> Result<(), JsValue> {
+    pub fn connect(mut self, addr: &str, port: i32, ssl: bool) -> Result<(), JsValue> {
         let protocol = if ssl { "wss" } else { "ws" };
         self.ws = WebSocket::new(&std::format!("{protocol}://{addr}:{port}"))?;
         self.ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
-        self.set_onopen_cb();
+        let rc_self = Rc::new(self);
+        Self::set_onopen_cb(Rc::clone(&rc_self));
+        Self::set_onerror_cb(Rc::clone(&rc_self));
+        Self::set_onmessage_cb(Rc::clone(&rc_self));
 
         Ok(())
     }
 
     fn set_onopen_cb(self: Rc<Self>) {
         let cloned_ws = self.ws.clone();
+        let cloned_self = Rc::clone(&self);
 
         let onopen_callback = Closure::<dyn FnMut()>::new(move || {
             console_log!("socket opened");
 
             let this = JsValue::null();
-            let _ = self.onOpen.call0(&this);
+            let _ = cloned_self.onOpen.call0(&this);
 
             match cloned_ws.send_with_str("ping") {
                 Ok(_) => console_log!("message successfully sent"),
@@ -104,10 +108,12 @@ impl AlarmClient {
     }
 
     fn set_onerror_cb(self: Rc<Self>) {
+        let cloned_self = Rc::clone(&self);
+
         let onerror_callback = Closure::<dyn FnMut(_)>::new(move |e: ErrorEvent| {
             console_log!("error event: {:?}", e);
             let this = JsValue::null();
-            let _ = self.onError.call1(&this, &e);
+            let _ = cloned_self.onError.call1(&this, &e);
         });
         self.ws
             .set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
