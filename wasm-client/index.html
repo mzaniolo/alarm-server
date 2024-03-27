@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en-US">
+
+<head>
+  <meta charset="utf-8" />
+  <title>hello-wasm example</title>
+</head>
+
+<body>
+  <p>Hello from wasm</p>
+  <script type="module">
+    import init, { hello, AlarmClient } from "./pkg/wasm_client.js";
+    init().then(() => {
+      console.log("from init");
+      console.log(hello("WebAssembly"));
+      let ac = new AlarmClient();
+      console.log("ac: " + ac)
+
+      ac.set_onopen(function () { console.log("ws open"); })
+      ac.connect("echo.websocket.org", 80, false)
+    });
+  </script>
+</body>
+
+</html>
