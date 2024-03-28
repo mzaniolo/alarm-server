@@ -17,7 +17,10 @@
       console.log("ac: " + ac)
 
       ac.set_onopen(function () { console.log("ws open"); })
-      ac.connect("echo.websocket.org", 80, false)
+
+      ac.connect("wss://echo.websocket.org", false)
+
+      // ac.set_onopen(function () { console.log("ws open"); })
     });
   </script>
 </body>

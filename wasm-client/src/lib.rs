@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use web_sys::{ErrorEvent, MessageEvent, WebSocket};
+extern crate console_error_panic_hook;
 
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
@@ -21,8 +22,9 @@ struct AlarmClient {
 
 #[wasm_bindgen]
 impl AlarmClient {
-    #[wasm_bindgen]
+    #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
+        console_error_panic_hook::set_once();
         Self {
             ws: None,
             on_open: Some(Self::on_open_default()),
@@ -32,9 +34,8 @@ impl AlarmClient {
     }
 
     #[wasm_bindgen]
-    pub fn connect(&mut self, addr: &str, port: i32, ssl: bool) -> Result<(), JsValue> {
-        let protocol = if ssl { "wss" } else { "ws" };
-        self.ws = Some(WebSocket::new(&std::format!("{protocol}://{addr}:{port}"))?);
+    pub fn connect(&mut self, addr: &str) -> Result<(), JsValue> {
+        self.ws = Some(WebSocket::new(addr)?);
         let ws = self.ws.as_ref().unwrap();
         ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
@@ -53,24 +54,13 @@ impl AlarmClient {
 
     #[wasm_bindgen]
     pub fn set_onopen(&mut self, cb: js_sys::Function) {
-        let cloned_ws = self.ws.as_ref().unwrap().clone();
-
         let onopen_callback = Closure::<dyn FnMut()>::new(move || {
             console_log!("socket opened");
 
             let this = JsValue::null();
             let _ = cb.call0(&this);
-
-            match cloned_ws.send_with_str("ping") {
-                Ok(_) => console_log!("message successfully sent"),
-                Err(err) => console_log!("error sending message: {:?}", err),
-            }
-            // send off binary message
-            match cloned_ws.send_with_str("Hello from wasm_client") {
-                Ok(_) => console_log!("str message successfully sent"),
-                Err(err) => console_log!("error sending message: {:?}", err),
-            }
         });
+
         if let Some(ws) = self.ws.as_ref() {
             ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
             onopen_callback.forget();
