@@ -48,10 +48,6 @@ impl Alarm {
         let rx = self.rx.as_mut().unwrap();
         while let Ok(value) = rx.recv().await {
             if value == self.set {
-                // println!(
-                //     "alarm {} is set with severity '{:?}' - value: {value}!",
-                //     self.path, self.severity
-                // );
                 let _ = self
                     .tx
                     .as_ref()
@@ -63,10 +59,6 @@ impl Alarm {
                     })
                     .await;
             } else if value == self.reset {
-                // println!(
-                //     "alarm {} is reset with severity '{:?}' - value: {value}!",
-                //     self.path, self.severity
-                // );
                 let _ = self
                     .tx
                     .as_ref()

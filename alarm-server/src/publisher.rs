@@ -5,9 +5,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{
+    protocol::{frame::coding::CloseCode, CloseFrame},
+    Error, Message,
+};
 
 const CHANNEL_SIZE: usize = 5;
+const PROTOCOL_VERSION: &'static str = include_str!("../../protocol_version");
 
 type Subscriptions = Arc<Mutex<HashMap<String, Vec<Client>>>>;
 
@@ -82,10 +86,27 @@ impl Publisher {
 
         let (mut ws_write, mut ws_read) = ws_stream.split();
 
-        Publisher::subscribe("sub1/alarm1", &subscriptions, client.clone()).await;
-        Publisher::subscribe("sub1/alarm2", &subscriptions, client.clone()).await;
-        Publisher::subscribe("sub2/alarm1", &subscriptions, client.clone()).await;
-        Publisher::subscribe("sub2/alarm2", &subscriptions, client.clone()).await;
+        // We first check if both sides have the same protocol version
+        if Self::do_handshake(ws_read.next().await) {
+            let _ = ws_write
+                .send(Message::Text(std::format!(
+                    "::protocol_version:: {PROTOCOL_VERSION}"
+                )))
+                .await;
+        } else {
+            println!("handshake with {} failed!", client.addr);
+            let _ = ws_write
+                .send(Message::Close(Some(CloseFrame {
+                    code: CloseCode::Protocol,
+                    reason: std::borrow::Cow::Borrowed("wrong version"),
+                })))
+                .await;
+            return;
+        }
+
+        let _ = ws_write
+            .send(Message::Text(String::from("Same protocol version!")))
+            .await;
 
         loop {
             tokio::select! {
@@ -95,12 +116,23 @@ impl Publisher {
                             let msg = msg.unwrap();
                             if msg.is_text() ||msg.is_binary() {
                                 println!("got from {} the message: {}", client.addr, msg.to_string());
+                                let msg: String = msg.to_string();
+                                if msg.starts_with("::"){
+                                    // this is a command
+                                    if msg.starts_with("::subscribe::") {
+                                        let alm = &msg[13..];
+                                        println!("subscribing to {}", alm);
+                                        Publisher::subscribe(alm, &subscriptions, client.clone()).await;
+                                    }
+                                }
                             } else if msg.is_close() {
                                 eprintln!("Connection closed by client {}", client.addr);
+                                return ;
                             }
                         }
                         _ => {
                             eprintln!("Something went wrong with client {}", client.addr);
+                            return ;
                         }
                     }
 
@@ -113,6 +145,30 @@ impl Publisher {
                 }
             }
         }
+    }
+
+    fn do_handshake(msg: Option<Result<Message, Error>>) -> bool {
+        match msg {
+            Some(msg) => match msg {
+                Ok(msg) => {
+                    let protocol_version = msg.to_string();
+                    if protocol_version != PROTOCOL_VERSION {
+                        eprintln!("Expected protocol version is {PROTOCOL_VERSION}, Received: {protocol_version}");
+                        return false;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Got error on handshake: {e}");
+                    return false;
+                }
+            },
+            None => {
+                eprintln!("Got no message during handshake");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     pub async fn listen_alarms(

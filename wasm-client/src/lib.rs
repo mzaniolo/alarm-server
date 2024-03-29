@@ -2,6 +2,8 @@ use wasm_bindgen::prelude::*;
 use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 extern crate console_error_panic_hook;
 
+const PROTOCOL_VERSION: &'static str = include_str!("../../protocol_version");
+
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
@@ -13,86 +15,97 @@ extern "C" {
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 struct AlarmClient {
-    ws: Option<WebSocket>,
-    on_open: Option<Closure<dyn FnMut()>>,
-    on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
-    on_error: Option<Closure<dyn FnMut(ErrorEvent)>>,
+    ws: WebSocket,
 }
 
 #[wasm_bindgen]
 impl AlarmClient {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
+    pub fn new(addr: &str) -> Result<AlarmClient, JsValue> {
         console_error_panic_hook::set_once();
-        Self {
-            ws: None,
-            on_open: Some(Self::on_open_default()),
-            on_message: Some(Self::on_message_default()),
-            on_error: Some(Self::on_error_default()),
-        }
-    }
 
-    #[wasm_bindgen]
-    pub fn connect(&mut self, addr: &str) -> Result<(), JsValue> {
-        self.ws = Some(WebSocket::new(addr)?);
-        let ws = self.ws.as_ref().unwrap();
+        let ws = WebSocket::new(addr)?;
         ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
-        ws.set_onopen(Some(
-            self.on_open.as_ref().unwrap().as_ref().unchecked_ref(),
-        ));
-        self.on_open.take().unwrap().forget();
+        let on_open_cb = Self::on_open_default(&ws);
+        ws.set_onopen(Some(on_open_cb.as_ref().unchecked_ref()));
+        on_open_cb.forget();
 
-        ws.set_onmessage(Some(
-            self.on_message.as_ref().unwrap().as_ref().unchecked_ref(),
-        ));
-        self.on_message.take().unwrap().forget();
+        let on_message_cb = Self::on_message_default();
+        ws.set_onmessage(Some(on_message_cb.as_ref().unchecked_ref()));
+        on_message_cb.forget();
+
+        let on_error_cb = Self::on_error_default();
+        ws.set_onerror(Some(on_error_cb.as_ref().unchecked_ref()));
+        on_error_cb.forget();
+
+        Ok(Self { ws })
+    }
+
+    pub fn acknowledge(&self, id: i32) -> Result<(), JsError> {
+        match self.ws.send_with_str(&std::format!("acknowledge: {id}")) {
+            Ok(_) => console_log!("message successfully sent"),
+            Err(err) => console_log!("error sending message: {:?}", err),
+        }
 
         Ok(())
     }
 
-    #[wasm_bindgen]
+    pub fn send_keep_alive(&self) -> Result<(), JsError> {
+        match self.ws.send_with_str("::ka::") {
+            Ok(_) => console_log!("message successfully sent"),
+            Err(err) => console_log!("error sending message: {:?}", err),
+        }
+
+        Ok(())
+    }
+
+    pub fn subscribe(&self, alm: &str) {
+        self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
+    }
+
     pub fn set_onopen(&mut self, cb: js_sys::Function) {
+        let cloned_ws = self.ws.clone();
         let onopen_callback = Closure::<dyn FnMut()>::new(move || {
             console_log!("socket opened");
+            let _ = cloned_ws.send_with_str(PROTOCOL_VERSION);
 
             let this = JsValue::null();
             let _ = cb.call0(&this);
         });
 
-        if let Some(ws) = self.ws.as_ref() {
-            ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
-            onopen_callback.forget();
-        } else {
-            self.on_open = Some(onopen_callback);
-        }
+        self.ws
+            .set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+        onopen_callback.forget();
     }
 
-    #[wasm_bindgen]
     pub fn set_onmessage(&mut self, cb: js_sys::Function) {
         let this = JsValue::null();
+        let self_cloned = self.clone();
 
         let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
             // Handle difference Text/Binary,...
             if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
                 console_log!("message event, received Text: {:?}", txt);
-                let _ = cb.call1(&this, &txt);
+                if txt.starts_with("::protocol_version::", 0) {
+                    console_log!("got server version!");
+                } else {
+                    let _ = cb.call1(&this, &txt);
+                    let _ = self_cloned.ws.is_array();
+                }
             } else {
                 console_log!("message event, received Unknown: {:?}", e.data());
                 let _ = cb.call1(&this, &e.data());
             }
         });
 
-        if let Some(ws) = self.ws.as_ref() {
-            ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
-            onmessage_callback.forget();
-        } else {
-            self.on_message = Some(onmessage_callback);
-        }
+        self.ws
+            .set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+        onmessage_callback.forget();
     }
 
-    #[wasm_bindgen]
     pub fn set_onerror(&mut self, cb: js_sys::Function) {
         let onerror_callback = Closure::<dyn FnMut(_)>::new(move |e: ErrorEvent| {
             console_log!("error event: {:?}", e);
@@ -100,17 +113,16 @@ impl AlarmClient {
             let _ = cb.call1(&this, &e);
         });
 
-        if let Some(ws) = self.ws.as_ref() {
-            ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
-            onerror_callback.forget();
-        } else {
-            self.on_error = Some(onerror_callback);
-        }
+        self.ws
+            .set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+        onerror_callback.forget();
     }
 
-    fn on_open_default() -> Closure<dyn FnMut()> {
+    fn on_open_default(ws: &WebSocket) -> Closure<dyn FnMut()> {
+        let cloned_ws = ws.clone();
         Closure::<dyn FnMut()>::new(move || {
-            console_log!("socket opened");
+            console_log!("on open");
+            let _ = cloned_ws.send_with_str(PROTOCOL_VERSION);
         })
     }
 

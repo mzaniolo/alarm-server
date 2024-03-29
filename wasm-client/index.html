@@ -10,17 +10,30 @@
   <p>Hello from wasm</p>
   <script type="module">
     import init, { hello, AlarmClient } from "./pkg/wasm_client.js";
+    let interval;
     init().then(() => {
       console.log("from init");
       console.log(hello("WebAssembly"));
-      let ac = new AlarmClient();
+      // let ac = new AlarmClient("wss://echo.websocket.org");
+      let ac = new AlarmClient("wss://probable-halibut-5vqvv7xpv943j5p-8080.app.github.dev/");
       console.log("ac: " + ac)
 
-      ac.set_onopen(function () { console.log("ws open"); })
+      ac.set_onopen(function () {
+        console.log("ws open");
+        // to Keep the connection alive
+        interval = setInterval(() => {
+          ac.send_keep_alive();
+        }, 12000);
 
-      ac.connect("wss://echo.websocket.org", false)
+        ac.subscribe("sub2/alarm1")
+      })
 
-      // ac.set_onopen(function () { console.log("ws open"); })
+
+
+      ac.set_onmessage(function (msg) {
+        console.log("got message: " + msg);
+      })
+
     });
   </script>
 </body>
