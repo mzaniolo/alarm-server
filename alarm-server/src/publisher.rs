@@ -14,6 +14,7 @@ const CHANNEL_SIZE: usize = 5;
 const PROTOCOL_VERSION: &'static str = include_str!("../../protocol_version");
 
 type Subscriptions = Arc<Mutex<HashMap<String, Vec<Client>>>>;
+type MapAck = Arc<Mutex<HashMap<String, mpsc::Sender<bool>>>>;
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -28,6 +29,7 @@ pub struct Publisher {
 
     clients: Vec<Client>,
     subscriptions: Subscriptions,
+    map_ack: MapAck,
 }
 
 impl Publisher {
@@ -36,7 +38,8 @@ impl Publisher {
             addr: addr.unwrap_or(String::from("127.0.0.1")),
             port: port.unwrap_or(8080),
             clients: Vec::new(),
-            subscriptions: Arc::new(Mutex::new(HashMap::new())),
+            subscriptions: Subscriptions::default(),
+            map_ack: MapAck::default(),
         }
     }
 
@@ -57,6 +60,7 @@ impl Publisher {
                 client,
                 rx,
                 Arc::clone(&self.subscriptions),
+                Arc::clone(&self.map_ack),
             ));
         }
         println!("Server started");
@@ -76,6 +80,7 @@ impl Publisher {
         client: Client,
         mut rx: mpsc::Receiver<String>,
         subscriptions: Subscriptions,
+        map_ack: MapAck,
     ) {
         println!("Incoming TCP connection from: {}", client.addr);
 
@@ -104,10 +109,6 @@ impl Publisher {
             return;
         }
 
-        let _ = ws_write
-            .send(Message::Text(String::from("Same protocol version!")))
-            .await;
-
         loop {
             tokio::select! {
                 msg = ws_read.next() => {
@@ -123,6 +124,20 @@ impl Publisher {
                                         let alm = &msg[13..];
                                         println!("subscribing to {}", alm);
                                         Publisher::subscribe(alm, &subscriptions, client.clone()).await;
+                                    }
+                                    if msg.starts_with("::ack::"){
+                                        let alm = &msg[7..];
+                                        println!("ack alm {}", alm);
+                                        let map = map_ack.lock().await;
+                                        match map.get(alm) {
+                                            Some(tx) => {
+                                                let _ = tx.send(true).await;
+                                            },
+                                            None => {
+                                                eprint!("Couldn't find {alm} to ack");
+                                                let _ = ws_write.send(Message::Text(std::format!("Couldn't find {alm} to ack"))).await;
+                                            }
+                                        }
                                     }
                                 }
                             } else if msg.is_close() {
@@ -177,7 +192,7 @@ impl Publisher {
     ) {
         while let Some(alm) = rx.recv().await {
             println!("got notified by alarm: {:?}", alm);
-            if let Some(clients) = subscriptions.lock().await.get(&alm.meas) {
+            if let Some(clients) = subscriptions.lock().await.get(&alm.name) {
                 for client in clients.iter() {
                     let _ = client.tx.send(std::format!("{:#?}", alm)).await;
                 }
@@ -187,5 +202,9 @@ impl Publisher {
 
     pub fn get_subscriptions(&self) -> Subscriptions {
         Arc::clone(&self.subscriptions)
+    }
+
+    pub fn get_map_ack(&self) -> MapAck {
+        Arc::clone(&self.map_ack)
     }
 }

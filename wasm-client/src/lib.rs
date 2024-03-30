@@ -44,8 +44,8 @@ impl AlarmClient {
         Ok(Self { ws })
     }
 
-    pub fn acknowledge(&self, id: i32) -> Result<(), JsError> {
-        match self.ws.send_with_str(&std::format!("acknowledge: {id}")) {
+    pub fn acknowledge(&self, id: &str) -> Result<(), JsError> {
+        match self.ws.send_with_str(&std::format!("::ack::{id}")) {
             Ok(_) => console_log!("message successfully sent"),
             Err(err) => console_log!("error sending message: {:?}", err),
         }
@@ -66,7 +66,7 @@ impl AlarmClient {
         self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
     }
 
-    pub fn close(&self){
+    pub fn close(&self) {
         self.ws.close();
     }
 

@@ -9,15 +9,16 @@ pub enum AlarmSeverity {
 
 #[derive(Debug, Clone)]
 pub enum AlarmState {
-    Set(i64),
-    Reset(i64),
+    Set,
+    Reset,
 }
 
 #[derive(Debug, Clone)]
 pub struct AlarmStatus {
+    pub name: String,
     pub status: AlarmState,
     pub severity: AlarmSeverity,
-    pub meas: String,
+    pub ack: bool,
 }
 
 #[derive(Debug)]
@@ -25,52 +26,61 @@ pub struct Alarm {
     path: String,
     set: i64,
     reset: i64,
-    severity: AlarmSeverity,
     meas: String,
     rx_meas: Option<broadcast::Receiver<i64>>,
-    rx_ack:Option<mpsc::Receiver<bool>>,
+    rx_ack: Option<mpsc::Receiver<bool>>,
     tx_publisher: Option<mpsc::Sender<AlarmStatus>>,
+
+    status: AlarmStatus,
 }
 
 impl Alarm {
     pub fn new(path: String, set: i64, reset: i64, severity: AlarmSeverity, meas: String) -> Self {
         Self {
-            path,
+            path: path.clone(),
             set,
             reset,
-            severity,
             meas,
             rx_meas: None,
             rx_ack: None,
             tx_publisher: None,
+            status: AlarmStatus {
+                name: path,
+                status: AlarmState::Reset,
+                severity,
+                ack: false,
+            },
         }
     }
 
     pub async fn run(&mut self) {
         let rx = self.rx_meas.as_mut().unwrap();
-        while let Ok(value) = rx.recv().await {
-            if value == self.set {
-                let _ = self
-                    .tx_publisher
-                    .as_ref()
-                    .unwrap()
-                    .send(AlarmStatus {
-                        status: AlarmState::Set(value),
-                        severity: self.severity.clone(),
-                        meas: self.path.clone(),
-                    })
-                    .await;
-            } else if value == self.reset {
-                let _ = self
-                    .tx_publisher
-                    .as_ref()
-                    .unwrap()
-                    .send(AlarmStatus {
-                        status: AlarmState::Reset(value),
-                        severity: self.severity.clone(),
-                        meas: self.path.clone(),
-                    })
-                    .await;
+        let rx_ack = self.rx_ack.as_mut().unwrap();
+        loop {
+            tokio::select! {
+                Ok(value) = rx.recv() => {
+                    if value == self.set {
+                        self.status.status = AlarmState::Set;
+                        self.status.ack = false;
+                    } else if value == self.reset {
+                        self.status.status = AlarmState::Reset;
+                    }
+                    let _ = self
+                            .tx_publisher
+                            .as_ref()
+                            .unwrap()
+                            .send(self.status.clone())
+                            .await;
+                },
+                Some(_) = rx_ack.recv() => {
+                    self.status.ack = true;
+                    let _ = self
+                            .tx_publisher
+                            .as_ref()
+                            .unwrap()
+                            .send(self.status.clone())
+                            .await;
+                }
             }
         }
     }
@@ -84,5 +94,11 @@ impl Alarm {
     }
     pub fn set_notifier(&mut self, tx: mpsc::Sender<AlarmStatus>) {
         self.tx_publisher = Some(tx);
+    }
+    pub fn set_ack_listener(&mut self, rx: mpsc::Receiver<bool>) {
+        self.rx_ack = Some(rx);
+    }
+    pub fn get_path(&self) -> &str {
+        &self.path
     }
 }

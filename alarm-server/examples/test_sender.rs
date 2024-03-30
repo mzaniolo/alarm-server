@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<TError>> {
     let mut value: i64 = 0;
     let mut flag = false;
 
-    let sleep_time = time::Duration::from_millis(500);
+    let sleep_time = time::Duration::from_millis(800);
     loop {
         for meas in routing_keys.iter() {
             value += 1;
