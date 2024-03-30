@@ -30,6 +30,7 @@
 
   <br /><br />
   <button id="disc_btn">Disconnect</button>
+  <button id="clear_btn">Clear log</button>
 
 
   <script type="module">
@@ -66,6 +67,7 @@
 
 
     document.getElementById("disc_btn").addEventListener("click", function () { alm_srv.close() });
+    document.getElementById("clear_btn").addEventListener("click", function () { document.getElementById("content").value = "" });
 
   </script>
 </body>

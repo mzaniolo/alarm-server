@@ -1,6 +1,7 @@
 use crate::alarm;
 use futures_util::{SinkExt, StreamExt};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -13,7 +14,7 @@ use tokio_tungstenite::tungstenite::{
 const CHANNEL_SIZE: usize = 5;
 const PROTOCOL_VERSION: &'static str = include_str!("../../protocol_version");
 
-type Subscriptions = Arc<Mutex<HashMap<String, Vec<Client>>>>;
+type Subscriptions = Arc<Mutex<HashMap<String, HashSet<Client>>>>;
 type MapAck = Arc<Mutex<HashMap<String, mpsc::Sender<bool>>>>;
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,20 @@ pub struct Client {
     tx: mpsc::Sender<String>,
     // subscriptions: Vec<String>,
 }
+
+impl Hash for Client {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.addr.hash(state)
+    }
+}
+
+impl PartialEq for Client {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr
+    }
+}
+
+impl Eq for Client {}
 
 pub struct Publisher {
     addr: String,
@@ -72,7 +87,7 @@ impl Publisher {
             .await
             .entry(String::from(alm))
             .or_default()
-            .push(client);
+            .insert(client);
     }
 
     async fn handle_client(
