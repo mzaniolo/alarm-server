@@ -27,8 +27,9 @@ pub struct Alarm {
     reset: i64,
     severity: AlarmSeverity,
     meas: String,
-    rx: Option<broadcast::Receiver<i64>>,
-    tx: Option<mpsc::Sender<AlarmStatus>>,
+    rx_meas: Option<broadcast::Receiver<i64>>,
+    rx_ack:Option<mpsc::Receiver<bool>>,
+    tx_publisher: Option<mpsc::Sender<AlarmStatus>>,
 }
 
 impl Alarm {
@@ -39,17 +40,18 @@ impl Alarm {
             reset,
             severity,
             meas,
-            rx: None,
-            tx: None,
+            rx_meas: None,
+            rx_ack: None,
+            tx_publisher: None,
         }
     }
 
     pub async fn run(&mut self) {
-        let rx = self.rx.as_mut().unwrap();
+        let rx = self.rx_meas.as_mut().unwrap();
         while let Ok(value) = rx.recv().await {
             if value == self.set {
                 let _ = self
-                    .tx
+                    .tx_publisher
                     .as_ref()
                     .unwrap()
                     .send(AlarmStatus {
@@ -60,7 +62,7 @@ impl Alarm {
                     .await;
             } else if value == self.reset {
                 let _ = self
-                    .tx
+                    .tx_publisher
                     .as_ref()
                     .unwrap()
                     .send(AlarmStatus {
@@ -74,13 +76,13 @@ impl Alarm {
     }
 
     pub fn subscribe(&mut self, rx: broadcast::Receiver<i64>) {
-        self.rx = Some(rx);
+        self.rx_meas = Some(rx);
     }
 
     pub fn get_meas(&self) -> &str {
         &self.meas
     }
     pub fn set_notifier(&mut self, tx: mpsc::Sender<AlarmStatus>) {
-        self.tx = Some(tx);
+        self.tx_publisher = Some(tx);
     }
 }

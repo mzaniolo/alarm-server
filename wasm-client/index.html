@@ -7,34 +7,58 @@
 </head>
 
 <body>
-  <p>Hello from wasm</p>
-  <script type="module">
-    import init, { hello, AlarmClient } from "./pkg/wasm_client.js";
-    let interval;
-    init().then(() => {
-      console.log("from init");
-      console.log(hello("WebAssembly"));
-      // let ac = new AlarmClient("wss://echo.websocket.org");
-      let ac = new AlarmClient("wss://probable-halibut-5vqvv7xpv943j5p-8080.app.github.dev/");
-      console.log("ac: " + ac)
+  <p>Alarm Server tester</p>
+  <label for="name">alarm server addr:</label><br />
 
-      ac.set_onopen(function () {
+  <input type="text" id="addr" name="addr" value="wss://probable-halibut-5vqvv7xpv943j5p-8080.app.github.dev/" required
+    minlength="6" size="80" />
+  <button id="connect_btn">Connect</button>
+  <br /><br />
+
+  <label for="name">Subscribe to alarm:</label><br />
+  <input type="text" id="subs" name="subs" value="sub2/alarm1" required minlength="6" size="80" />
+  <button id="subs_btn">Subscribe</button>
+  <br /><br />
+
+  <textarea type="text" name="content" id="content">
+  </textarea>
+
+  <br /><br />
+  <button id="disc_btn">Disconnect</button>
+
+
+  <script type="module">
+    import init, { AlarmClient } from "./pkg/wasm_client.js";
+    let interval;
+    let alm_srv
+    init()
+
+    function connect_alarm_server() {
+      let addr = document.getElementById("addr").value
+
+      alm_srv = new AlarmClient(addr);
+
+      alm_srv.set_onopen(function () {
         console.log("ws open");
+
         // to Keep the connection alive
         interval = setInterval(() => {
-          ac.send_keep_alive();
+          alm_srv.send_keep_alive();
         }, 12000);
-
-        ac.subscribe("sub2/alarm1")
       })
 
 
 
-      ac.set_onmessage(function (msg) {
-        console.log("got message: " + msg);
+      alm_srv.set_onmessage(function (msg) {
+        document.getElementById("content").value = msg + document.getElementById("content").value
       })
+    }
 
-    });
+    console.log("adding event")
+    document.getElementById("connect_btn").addEventListener("click", connect_alarm_server);
+    document.getElementById("subs_btn").addEventListener("click", function () {alm_srv.subscribe(document.getElementById("subs").value)});
+    document.getElementById("disc_btn").addEventListener("click", function () { alm_srv.close() });
+
   </script>
 </body>
 

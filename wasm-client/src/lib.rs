@@ -66,6 +66,10 @@ impl AlarmClient {
         self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
     }
 
+    pub fn close(&self){
+        self.ws.close();
+    }
+
     pub fn set_onopen(&mut self, cb: js_sys::Function) {
         let cloned_ws = self.ws.clone();
         let onopen_callback = Closure::<dyn FnMut()>::new(move || {
