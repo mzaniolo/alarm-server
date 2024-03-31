@@ -1,4 +1,4 @@
-use alarm_server::{publisher::Publisher, reader::Reader};
+use alarm_server::{server::Server, reader::Reader};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -17,7 +17,7 @@ async fn main() {
 
     let (tx_alm, rx_alm) = mpsc::channel(100);
 
-    let mut server = Publisher::new(None, None);
+    let mut server = Server::new(None, None);
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
     let map_ack = server.get_map_ack();
@@ -49,7 +49,7 @@ async fn main() {
 
     let subscriptions = server.get_subscriptions();
 
-    tokio::spawn(async move { Publisher::listen_alarms(rx_alm, subscriptions).await });
+    tokio::spawn(async move { Server::listen_alarms(rx_alm, subscriptions).await });
 
     server.connect().await;
 }

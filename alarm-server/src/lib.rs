@@ -3,7 +3,7 @@ use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
 
 pub mod alarm;
-pub mod publisher;
+pub mod server;
 pub mod reader;
 
 pub fn load_config(path: &str) -> Yaml {
