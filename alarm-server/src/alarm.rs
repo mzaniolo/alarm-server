@@ -15,6 +15,7 @@ pub enum AlarmState {
 
 #[derive(Debug, Clone)]
 pub struct AlarmStatus {
+    pub id: u32,
     pub name: String,
     pub status: AlarmState,
     pub severity: AlarmSeverity,
@@ -23,6 +24,7 @@ pub struct AlarmStatus {
 
 #[derive(Debug)]
 pub struct Alarm {
+    id: u32,
     path: String,
     set: i64,
     reset: i64,
@@ -35,8 +37,16 @@ pub struct Alarm {
 }
 
 impl Alarm {
-    pub fn new(path: String, set: i64, reset: i64, severity: AlarmSeverity, meas: String) -> Self {
+    pub fn new(
+        id: u32,
+        path: String,
+        set: i64,
+        reset: i64,
+        severity: AlarmSeverity,
+        meas: String,
+    ) -> Self {
         Self {
+            id,
             path: path.clone(),
             set,
             reset,
@@ -45,6 +55,7 @@ impl Alarm {
             rx_ack: None,
             tx_publisher: None,
             status: AlarmStatus {
+                id, 
                 name: path,
                 status: AlarmState::Reset,
                 severity,
