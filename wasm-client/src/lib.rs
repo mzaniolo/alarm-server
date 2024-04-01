@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use web_sys::{ErrorEvent, MessageEvent, WebSocket};
+use web_sys::{CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 extern crate console_error_panic_hook;
 
 const PROTOCOL_VERSION: &'static str = include_str!("../../protocol_version");
@@ -40,6 +40,10 @@ impl AlarmClient {
         let on_error_cb = Self::on_error_default();
         ws.set_onerror(Some(on_error_cb.as_ref().unchecked_ref()));
         on_error_cb.forget();
+
+        let on_close_cb = Self::on_close_default();
+        ws.set_onclose(Some(on_close_cb.as_ref().unchecked_ref()));
+        on_close_cb.forget();
 
         Ok(Self { ws })
     }
@@ -122,6 +126,18 @@ impl AlarmClient {
         onerror_callback.forget();
     }
 
+    pub fn set_onclose(&mut self, cb: js_sys::Function) {
+        let onclose_callback = Closure::<dyn FnMut(_)>::new(move |e: CloseEvent| {
+            console_log!("close event: {:?}", e);
+            let this = JsValue::null();
+            let _ = cb.call1(&this, &e);
+        });
+
+        self.ws
+            .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+        onclose_callback.forget();
+    }
+
     fn on_open_default(ws: &WebSocket) -> Closure<dyn FnMut()> {
         let cloned_ws = ws.clone();
         Closure::<dyn FnMut()>::new(move || {
@@ -145,9 +161,10 @@ impl AlarmClient {
             console_log!("error event: {:?}", e);
         })
     }
-}
 
-#[wasm_bindgen]
-pub fn hello(msg: &str) -> String {
-    std::format!("Hello World: {msg}")
+    fn on_close_default() -> Closure<dyn FnMut(CloseEvent)> {
+        Closure::<dyn FnMut(_)>::new(move |e: CloseEvent| {
+            console_log!("close event: {:?}", e);
+        })
+    }
 }
