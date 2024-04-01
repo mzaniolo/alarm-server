@@ -1,13 +1,13 @@
 use tokio::sync::{broadcast, mpsc};
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum AlarmSeverity {
     High,
     Medium,
     Low,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum AlarmState {
     Set,
     Reset,
@@ -17,7 +17,7 @@ pub enum AlarmState {
 pub struct AlarmStatus {
     pub id: u32,
     pub name: String,
-    pub status: AlarmState,
+    pub state: AlarmState,
     pub severity: AlarmSeverity,
     pub ack: bool,
 }
@@ -55,9 +55,9 @@ impl Alarm {
             rx_ack: None,
             tx_publisher: None,
             status: AlarmStatus {
-                id, 
+                id,
                 name: path,
-                status: AlarmState::Reset,
+                state: AlarmState::Reset,
                 severity,
                 ack: false,
             },
@@ -71,10 +71,10 @@ impl Alarm {
             tokio::select! {
                 Ok(value) = rx.recv() => {
                     if value == self.set {
-                        self.status.status = AlarmState::Set;
+                        self.status.state = AlarmState::Set;
                         self.status.ack = false;
                     } else if value == self.reset {
-                        self.status.status = AlarmState::Reset;
+                        self.status.state = AlarmState::Reset;
                     }
                     let _ = self
                             .tx_publisher

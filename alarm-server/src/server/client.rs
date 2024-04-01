@@ -15,6 +15,7 @@ enum Commands<'a> {
     KeepAlive,
     Ack(&'a str),
     Subscribe(&'a str),
+    GetAll,
 
     Unknown,
 }
@@ -99,6 +100,9 @@ impl Client {
                                             }
                                         }
                                     },
+                                    Commands::GetAll => {
+
+                                    }
                                     Commands::KeepAlive => {},
                                     Commands::Unknown => {
                                         eprint!("Got unknown command '{msg}' from {:?}", client.addr)
@@ -159,6 +163,8 @@ impl Client {
         } else if msg.starts_with("::ack::") {
             let alm = &msg[7..];
             return Commands::Ack(alm);
+        } else if msg == "::ga::" {
+            return Commands::GetAll;
         }
 
         Commands::Unknown

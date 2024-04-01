@@ -1,4 +1,4 @@
-use crate::alarm;
+use crate::alarm::{self, AlarmState};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ const CHANNEL_SIZE: usize = 5;
 
 pub type Subscriptions = Arc<Mutex<HashMap<String, HashSet<client::Client>>>>;
 pub type MapAck = Arc<Mutex<HashMap<String, mpsc::Sender<bool>>>>;
+pub type MapAlmStatus = Arc<Mutex<HashMap<u32, alarm::AlarmStatus>>>;
 
 pub struct Server {
     addr: String,
@@ -19,6 +20,7 @@ pub struct Server {
     clients: Vec<client::Client>,
     subscriptions: Subscriptions,
     map_ack: MapAck,
+    map_alm_status: MapAlmStatus,
 }
 
 impl Server {
@@ -29,6 +31,7 @@ impl Server {
             clients: Vec::new(),
             subscriptions: Subscriptions::default(),
             map_ack: MapAck::default(),
+            map_alm_status: MapAlmStatus::default(),
         }
     }
 
@@ -67,13 +70,26 @@ impl Server {
     pub async fn listen_alarms(
         mut rx: mpsc::Receiver<alarm::AlarmStatus>,
         subscriptions: Subscriptions,
+        map_alm_status: MapAlmStatus,
     ) {
         while let Some(alm) = rx.recv().await {
             println!("got notified by alarm: {:?}", alm);
+
             if let Some(clients) = subscriptions.lock().await.get(&alm.name) {
                 for client in clients.iter() {
                     let _ = client.tx.send(std::format!("{:#?}", alm)).await;
                 }
+            }
+
+            if alm.state == AlarmState::Reset && alm.ack {
+                // If the alarm was reset and ack we just don't care about it anymore
+                map_alm_status.lock().await.remove(&alm.id);
+            } else {
+                map_alm_status
+                    .lock()
+                    .await
+                    .entry(alm.id)
+                    .or_insert(alm.clone());
             }
         }
     }
