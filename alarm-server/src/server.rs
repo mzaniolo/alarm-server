@@ -1,7 +1,6 @@
 use crate::alarm::{self, AlarmState};
 
 use std::collections::{HashMap, HashSet};
-use std::string;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
@@ -44,11 +43,7 @@ impl Server {
         // Let's spawn the handling of each connection in a separate task.
         while let Ok((stream, addr)) = listener.accept().await {
             let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-            let client = client::Client {
-                addr,
-                tx,
-                subscriptions: Vec::new(),
-            };
+            let client = client::Client { addr, tx };
             tokio::spawn(client::Client::handle_client(
                 stream,
                 client,
@@ -61,7 +56,7 @@ impl Server {
         println!("Server started");
     }
 
-    async fn subscribe(alm: &str, subscriptions: &Subscriptions, client: client::Client) -> bool{
+    async fn subscribe(alm: &str, subscriptions: &Subscriptions, client: client::Client) -> bool {
         subscriptions
             .lock()
             .await
@@ -79,8 +74,9 @@ impl Server {
             println!("got notified by alarm: {:?}", alm);
 
             if let Some(clients) = subscriptions.lock().await.get(&alm.name) {
+                let alm_json = serde_json::to_string(&alm).unwrap();
                 for client in clients.iter() {
-                    let _ = client.tx.send(std::format!("{:#?}", alm)).await;
+                    let _ = client.tx.send(alm_json.clone()).await;
                 }
             }
 
@@ -105,13 +101,17 @@ impl Server {
         Arc::clone(&self.map_ack)
     }
 
+    pub fn get_map_alm(&self) -> MapAlmStatus {
+        Arc::clone(&self.map_alm_status)
+    }
+
     async fn get_all_subscribed(
         subscriptions: &Vec<String>,
         map_alm_status: &MapAlmStatus,
     ) -> Vec<alarm::AlarmStatus> {
         let mut ret = Vec::new();
         let map = map_alm_status.lock().await;
-        for subs in subscriptions.iter(){
+        for subs in subscriptions.iter() {
             if let Some(status) = map.get(subs) {
                 ret.push(status.clone())
             }

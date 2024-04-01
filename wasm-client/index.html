@@ -4,6 +4,15 @@
 <head>
   <meta charset="utf-8" />
   <title>Alarm Server tester</title>
+  <style>
+    tr {
+      border-bottom: 1px solid #ddd;
+    }
+
+    tr:hover {
+      background-color: #D6EEEE;
+    }
+  </style>
 </head>
 
 <body>
@@ -25,10 +34,29 @@
   <button id="ack_btn">Acknowledge</button>
   <br /><br />
 
-  <textarea type="text" name="content" id="content">
+  <textarea type="text" name="content" id="content" style="width:70%; height: 15em;">
   </textarea>
+  <br /><br />
+
+  <table id="AlmTable" style="width:60%">
+    <caption>
+      Alarms table
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col" style="width:50%">Alarm</th>
+        <th scope="col" style="width:20%">State</th>
+        <th scope="col" style="width:20%">Severity</th>
+        <th scope="col" style="width:10%">Ack</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+  <br /><br />
 
   <br /><br />
+  <button id="get_all_btn">Get all alarms</button>
   <button id="disc_btn">Disconnect</button>
   <button id="clear_btn">Clear log</button>
 
@@ -56,8 +84,38 @@
 
 
       alm_srv.set_onmessage(function (msg) {
-        document.getElementById("content").value = msg + document.getElementById("content").value
+        var alm = JSON.parse(msg);
+        document.getElementById("content").value = JSON.stringify(alm) + document.getElementById("content").value
+        if (Array.isArray(alm)) {
+          alm.forEach((element) => update_table(element));
+        } else {
+          update_table(alm);
+        }
+
       })
+    }
+
+    function update_table(alm) {
+      var table = document.getElementById("AlmTable").getElementsByTagName('tbody')[0];
+
+      for (var i = 0, row; row = table.rows[i]; i++) {
+        if (row.cells[0].innerHTML == alm["name"]) {
+          if (alm["state"] == "Reset" && alm["ack"]) {
+            table.deleteRow(i);
+            return;
+          }
+          row.cells[1].innerHTML = alm["state"];
+          row.cells[2].innerHTML = alm["severity"];
+          row.cells[3].innerHTML = alm["ack"];
+          return
+        }
+      }
+
+      var row = table.insertRow();
+      row.insertCell(0).innerHTML = alm["name"];
+      row.insertCell(1).innerHTML = alm["state"];
+      row.insertCell(2).innerHTML = alm["severity"];
+      row.insertCell(3).innerHTML = alm["ack"];
     }
 
     console.log("adding event")
@@ -66,6 +124,7 @@
     document.getElementById("ack_btn").addEventListener("click", function () { alm_srv.acknowledge(document.getElementById("ack").value) });
 
 
+    document.getElementById("get_all_btn").addEventListener("click", function () { alm_srv.get_all_alarms() });
     document.getElementById("disc_btn").addEventListener("click", function () { alm_srv.close() });
     document.getElementById("clear_btn").addEventListener("click", function () { document.getElementById("content").value = "" });
 

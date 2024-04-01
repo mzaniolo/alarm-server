@@ -57,25 +57,27 @@ impl AlarmClient {
         Ok(())
     }
 
-    pub fn send_keep_alive(&self) -> Result<(), JsError> {
+    pub fn send_keep_alive(&self) -> Result<(), JsValue> {
         match self.ws.send_with_str("::ka::") {
-            Ok(_) => console_log!("message successfully sent"),
-            Err(err) => console_log!("error sending message: {:?}", err),
+            Ok(_) => {}
+            Err(err) => {
+                console_log!("error sending keep alive: {:?}", err);
+                return Err(err);
+            }
         }
-
         Ok(())
     }
 
     pub fn subscribe(&self, alm: &str) {
-        self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
+        let _ = self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
     }
 
     pub fn get_all_alarms(&self) {
-        self.ws.send_with_str("::ga::");
+        let _ = self.ws.send_with_str("::ga::");
     }
 
     pub fn close(&self) {
-        self.ws.close();
+        let _ = self.ws.close();
     }
 
     pub fn set_onopen(&mut self, cb: js_sys::Function) {

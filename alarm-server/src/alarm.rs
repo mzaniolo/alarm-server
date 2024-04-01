@@ -1,19 +1,20 @@
 use tokio::sync::{broadcast, mpsc};
+use serde::Serialize;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Debug, Clone)]
 pub enum AlarmSeverity {
     High,
     Medium,
     Low,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Debug, Clone)]
 pub enum AlarmState {
     Set,
     Reset,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct AlarmStatus {
     pub name: String,
     pub state: AlarmState,

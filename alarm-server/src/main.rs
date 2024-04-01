@@ -1,4 +1,4 @@
-use alarm_server::{server::Server, reader::Reader};
+use alarm_server::{reader::Reader, server::Server};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -48,8 +48,9 @@ async fn main() {
     println!("=== wait tasks ===");
 
     let subscriptions = server.get_subscriptions();
+    let map_alm = server.get_map_alm();
 
-    tokio::spawn(async move { Server::listen_alarms(rx_alm, subscriptions).await });
+    tokio::spawn(async move { Server::listen_alarms(rx_alm, subscriptions, map_alm).await });
 
     server.connect().await;
 }

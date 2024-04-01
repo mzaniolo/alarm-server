@@ -107,13 +107,7 @@ impl Client {
                                     },
                                     Commands::GetAll => {
                                         let all_alms: Vec<_> = Server::get_all_subscribed(&list_subscriptions, &map_alm_status).await;
-
-                                        let mut ret = String::new();
-
-                                        for alm in all_alms.iter(){
-                                            ret.push_str(&std::format!("{:?}\n", alm));
-                                        }
-                                        let _ = ws_write.send(Message::Text(ret)).await;
+                                        let _ = ws_write.send(Message::Text(serde_json::to_string(&all_alms).unwrap())).await;
                                     }
                                     Commands::KeepAlive => {},
                                     Commands::Unknown => {
