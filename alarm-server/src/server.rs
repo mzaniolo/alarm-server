@@ -1,6 +1,7 @@
 use crate::alarm::{self, AlarmState};
 
 use std::collections::{HashMap, HashSet};
+use std::string;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
@@ -11,13 +12,12 @@ const CHANNEL_SIZE: usize = 5;
 
 pub type Subscriptions = Arc<Mutex<HashMap<String, HashSet<client::Client>>>>;
 pub type MapAck = Arc<Mutex<HashMap<String, mpsc::Sender<bool>>>>;
-pub type MapAlmStatus = Arc<Mutex<HashMap<u32, alarm::AlarmStatus>>>;
+pub type MapAlmStatus = Arc<Mutex<HashMap<String, alarm::AlarmStatus>>>;
 
 pub struct Server {
     addr: String,
     port: u16,
 
-    clients: Vec<client::Client>,
     subscriptions: Subscriptions,
     map_ack: MapAck,
     map_alm_status: MapAlmStatus,
@@ -28,7 +28,6 @@ impl Server {
         Self {
             addr: addr.unwrap_or(String::from("127.0.0.1")),
             port: port.unwrap_or(8080),
-            clients: Vec::new(),
             subscriptions: Subscriptions::default(),
             map_ack: MapAck::default(),
             map_alm_status: MapAlmStatus::default(),
@@ -45,26 +44,30 @@ impl Server {
         // Let's spawn the handling of each connection in a separate task.
         while let Ok((stream, addr)) = listener.accept().await {
             let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-            let client = client::Client { addr, tx };
-            self.clients.push(client.clone());
+            let client = client::Client {
+                addr,
+                tx,
+                subscriptions: Vec::new(),
+            };
             tokio::spawn(client::Client::handle_client(
                 stream,
                 client,
                 rx,
                 Arc::clone(&self.subscriptions),
                 Arc::clone(&self.map_ack),
+                Arc::clone(&self.map_alm_status),
             ));
         }
         println!("Server started");
     }
 
-    async fn subscribe(alm: &str, subscriptions: &Subscriptions, client: client::Client) {
+    async fn subscribe(alm: &str, subscriptions: &Subscriptions, client: client::Client) -> bool{
         subscriptions
             .lock()
             .await
             .entry(String::from(alm))
             .or_default()
-            .insert(client);
+            .insert(client)
     }
 
     pub async fn listen_alarms(
@@ -83,13 +86,13 @@ impl Server {
 
             if alm.state == AlarmState::Reset && alm.ack {
                 // If the alarm was reset and ack we just don't care about it anymore
-                map_alm_status.lock().await.remove(&alm.id);
+                map_alm_status.lock().await.remove(&alm.name);
             } else {
                 map_alm_status
                     .lock()
                     .await
-                    .entry(alm.id)
-                    .or_insert(alm.clone());
+                    .entry(alm.name.clone())
+                    .or_insert(alm);
             }
         }
     }
@@ -100,5 +103,20 @@ impl Server {
 
     pub fn get_map_ack(&self) -> MapAck {
         Arc::clone(&self.map_ack)
+    }
+
+    async fn get_all_subscribed(
+        subscriptions: &Vec<String>,
+        map_alm_status: &MapAlmStatus,
+    ) -> Vec<alarm::AlarmStatus> {
+        let mut ret = Vec::new();
+        let map = map_alm_status.lock().await;
+        for subs in subscriptions.iter(){
+            if let Some(status) = map.get(subs) {
+                ret.push(status.clone())
+            }
+        }
+
+        ret
     }
 }

@@ -70,6 +70,10 @@ impl AlarmClient {
         self.ws.send_with_str(&std::format!("::subscribe::{alm}"));
     }
 
+    pub fn get_all_alarms(&self) {
+        self.ws.send_with_str("::ga::");
+    }
+
     pub fn close(&self) {
         self.ws.close();
     }

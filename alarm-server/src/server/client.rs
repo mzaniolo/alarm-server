@@ -1,4 +1,4 @@
-use crate::server::{MapAck, Server, Subscriptions};
+use crate::server::{MapAck, MapAlmStatus, Server, Subscriptions};
 use futures_util::{SinkExt, StreamExt};
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
@@ -47,6 +47,7 @@ impl Client {
         mut rx: mpsc::Receiver<String>,
         subscriptions: Subscriptions,
         map_ack: MapAck,
+        map_alm_status: MapAlmStatus,
     ) {
         println!("Incoming TCP connection from: {}", client.addr);
 
@@ -75,6 +76,8 @@ impl Client {
             return;
         }
 
+        let mut list_subscriptions: Vec<String> = Vec::new();
+
         loop {
             tokio::select! {
                 msg = ws_read.next() => {
@@ -86,7 +89,9 @@ impl Client {
                                 match Self::parse_command(&msg) {
                                     Commands::Subscribe(alm) => {
                                         println!("subscribing to {}", alm);
-                                        Server::subscribe(alm, &subscriptions, client.clone()).await;
+                                        if Server::subscribe(alm, &subscriptions, client.clone()).await{
+                                            list_subscriptions.push(String::from(alm));
+                                        }
                                     },
                                     Commands::Ack(alm) => {
                                         let map = map_ack.lock().await;
@@ -101,7 +106,14 @@ impl Client {
                                         }
                                     },
                                     Commands::GetAll => {
+                                        let all_alms: Vec<_> = Server::get_all_subscribed(&list_subscriptions, &map_alm_status).await;
 
+                                        let mut ret = String::new();
+
+                                        for alm in all_alms.iter(){
+                                            ret.push_str(&std::format!("{:?}\n", alm));
+                                        }
+                                        let _ = ws_write.send(Message::Text(ret)).await;
                                     }
                                     Commands::KeepAlive => {},
                                     Commands::Unknown => {
