@@ -73,7 +73,7 @@ cargo run
 ```
 
 For the client all that's needed is to import it on the webpage like this:
-```html 
+```html
 <script type="module">
     import init, { AlarmClient } from "./pkg/wasm_client.js";
     let interval;
@@ -108,4 +108,4 @@ So far the next steps are:
 
 
 > [!WARNING]
-> This is still a work in progress and is yet not functional
+> This is still a work in progress and is yet not production ready
