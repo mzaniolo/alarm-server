@@ -104,6 +104,7 @@ So far the next steps are:
  - Make unit test
  - Create config file for the server
  - Make alarms more flexible, with more types
+ - Add authentication and permissions
  - Replace the server-client string based protocol by something smaller. Possible candidate is [Prost](https://github.com/tokio-rs/prost)
 
 
