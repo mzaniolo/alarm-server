@@ -1,5 +1,5 @@
-use tokio::sync::{broadcast, mpsc};
 use serde::Serialize;
+use tokio::sync::{broadcast, mpsc};
 
 mod create_alarm;
 pub use create_alarm::create_alarms;
@@ -63,18 +63,24 @@ impl Alarm {
         loop {
             tokio::select! {
                 Ok(value) = rx.recv() => {
+                    let mut updated = false;
                     if value == self.set {
                         self.status.state = AlarmState::Set;
                         self.status.ack = false;
-                    } else if value == self.reset {
+                        updated = true;
+                    } else if value == self.reset && self.status.state != AlarmState::Reset{
                         self.status.state = AlarmState::Reset;
+                        updated = true;
                     }
-                    let _ = self
+
+                    if updated{
+                        let _ = self
                             .tx_publisher
                             .as_ref()
                             .unwrap()
                             .send(self.status.clone())
                             .await;
+                    }
                 },
                 Some(_) = rx_ack.recv() => {
                     self.status.ack = true;
@@ -107,4 +113,163 @@ impl Alarm {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+    use tokio::time::{sleep, Duration};
 
+    fn alm_setup(
+        path: &str,
+        set: i64,
+        reset: i64,
+        severity: &AlarmSeverity,
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        tokio::sync::mpsc::Receiver<AlarmStatus>,
+        tokio::sync::mpsc::Sender<bool>,
+        tokio::sync::broadcast::Sender<i64>,
+    ) {
+        let mut alm = Alarm::new(
+            path.to_string(),
+            set,
+            reset,
+            severity.clone(),
+            "my_meas".to_string(),
+        );
+
+        let (tx_alm, rx_alm) = mpsc::channel(1);
+        let (tx_ack, rx_ack) = mpsc::channel(1);
+        let (tx_meas, rx_meas) = broadcast::channel(1);
+
+        alm.set_notifier(tx_alm);
+        alm.subscribe(rx_meas);
+        alm.set_ack_listener(rx_ack);
+
+        let task = tokio::spawn(async move {
+            alm.run().await;
+        });
+
+        (task, rx_alm, tx_ack, tx_meas)
+    }
+
+    async fn try_receive(rx: &mut mpsc::Receiver<AlarmStatus>) -> Option<AlarmStatus> {
+        let mut alm_status = rx.try_recv();
+        let mut i = 5;
+        while let Err(_) = alm_status {
+            if i < 0 {
+                break;
+            }
+            alm_status = rx.try_recv();
+            i -= 1;
+            sleep(Duration::from_millis(100)).await
+        }
+
+        if alm_status.is_ok() {
+            return Some(alm_status.unwrap());
+        }
+
+        None
+    }
+
+    #[tokio::test]
+    async fn test_set() -> Result<(), Box<dyn std::error::Error>> {
+        let alm_path = "my_path";
+        let alm_set = 1;
+        let alm_sev = AlarmSeverity::High;
+
+        let (task, mut rx_alm, _tx_ack, tx_meas) = alm_setup(alm_path, alm_set, 99, &alm_sev);
+
+        tx_meas.send(alm_set)?;
+        let alm_status = rx_alm.recv().await;
+
+        assert!(alm_status.is_some());
+
+        let alm_status = alm_status.unwrap();
+
+        assert_eq!(alm_status.state, AlarmState::Set);
+        assert_eq!(alm_status.severity, alm_sev);
+        assert_eq!(alm_status.name, alm_path);
+        assert!(!alm_status.ack);
+
+        task.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_set_reset() -> Result<(), Box<dyn std::error::Error>> {
+        let alm_path = "my_path";
+        let alm_set = 1;
+        let alm_reset = 2;
+        let alm_sev = AlarmSeverity::High;
+
+        let (task, mut rx_alm, _tx_ack, tx_meas) =
+            alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
+
+        tx_meas.send(alm_set)?;
+        let alm_status = rx_alm.recv().await;
+
+        assert!(alm_status.is_some());
+
+        let alm_status = alm_status.unwrap();
+
+        assert_eq!(alm_status.state, AlarmState::Set);
+        assert_eq!(alm_status.severity, alm_sev);
+        assert_eq!(alm_status.name, alm_path);
+        assert!(!alm_status.ack);
+
+        tx_meas.send(alm_reset)?;
+        let alm_status = rx_alm.recv().await;
+
+        assert!(alm_status.is_some());
+
+        let alm_status = alm_status.unwrap();
+
+        assert_eq!(alm_status.state, AlarmState::Reset);
+        assert_eq!(alm_status.severity, alm_sev);
+        assert_eq!(alm_status.name, alm_path);
+        assert!(!alm_status.ack);
+
+        task.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_reset() -> Result<(), Box<dyn std::error::Error>> {
+        let alm_path = "my_path";
+        let alm_set = 1;
+        let alm_reset = 2;
+        let alm_sev = AlarmSeverity::High;
+
+        let (task, mut rx_alm, _tx_ack, tx_meas) =
+            alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
+
+        tx_meas.send(99)?;
+        let alm_status = try_receive(&mut rx_alm).await;
+        assert!(alm_status.is_none());
+
+        tx_meas.send(42)?;
+        let alm_status = try_receive(&mut rx_alm).await;
+        assert!(alm_status.is_none());
+
+        tx_meas.send(alm_reset)?;
+        let alm_status = try_receive(&mut rx_alm).await;
+        assert!(alm_status.is_none());
+
+        tx_meas.send(alm_set)?;
+        let alm_status = try_receive(&mut rx_alm).await;
+        assert!(alm_status.is_some());
+        let alm_status = alm_status.unwrap();
+
+        assert_eq!(alm_status.state, AlarmState::Set);
+        assert_eq!(alm_status.severity, alm_sev);
+        assert_eq!(alm_status.name, alm_path);
+        assert!(!alm_status.ack);
+
+        task.abort();
+
+        Ok(())
+    }
+}
