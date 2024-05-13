@@ -1,13 +1,9 @@
-use alarm_server::{reader::Reader, server::Server};
+use alarm_server::{reader::Reader, server::Server, alarm};
 use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
-
-    let config = alarm_server::load_config("examples/config.yaml");
-
-    let alms = alarm_server::create_alarms(config);
+    let alms = alarm::create_alarms("examples/config.yaml");
 
     let mut reader = Reader::new(None, None, None, None);
     if let Err(e) = reader.connect().await {

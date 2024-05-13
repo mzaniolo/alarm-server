@@ -1,6 +1,9 @@
 use tokio::sync::{broadcast, mpsc};
 use serde::Serialize;
 
+mod create_alarm;
+pub use create_alarm::create_alarms;
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 pub enum AlarmSeverity {
     High,
@@ -103,3 +106,5 @@ impl Alarm {
         &self.path
     }
 }
+
+
