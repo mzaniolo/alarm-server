@@ -1,4 +1,4 @@
-use crate::alarm::{self, AlarmState};
+use crate::alarm::{self, AlarmAck, AlarmState};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -80,7 +80,7 @@ impl Server {
                 }
             }
 
-            if alm.state == AlarmState::Reset && alm.ack {
+            if alm.state == AlarmState::Reset && alm.ack == AlarmAck::None {
                 // If the alarm was reset and ack we just don't care about it anymore
                 map_alm_status.lock().await.remove(&alm.name);
             } else {
