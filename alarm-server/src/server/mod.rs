@@ -1,4 +1,5 @@
 use crate::alarm::{self, AlarmAck, AlarmState};
+use crate::config::ServerConfig;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -23,10 +24,10 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(addr: Option<String>, port: Option<u16>) -> Self {
+    pub fn new(config: ServerConfig) -> Self {
         Self {
-            addr: addr.unwrap_or(String::from("127.0.0.1")),
-            port: port.unwrap_or(8080),
+            addr: config.ip,
+            port: config.port,
             subscriptions: Subscriptions::default(),
             map_ack: MapAck::default(),
             map_alm_status: MapAlmStatus::default(),

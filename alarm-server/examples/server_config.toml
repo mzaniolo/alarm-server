@@ -2,7 +2,7 @@ title = "Alarm server configuration"
 
 [broker]
 ip = "localhost"
-port = "5672"
+port = 5672
 username = "guest"
 password = "guest"
 

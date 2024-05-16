@@ -1,11 +1,14 @@
-use alarm_server::{reader::Reader, server::Server, alarm};
+use alarm_server::{alarm, config, reader::Reader, server::Server};
 use tokio::sync::mpsc;
+use tokio_tungstenite::connect_async;
 
 #[tokio::main]
 async fn main() {
-    let alms = alarm::create_alarms("examples/config.yaml");
+    let config = config::read_config("examples/server_config.toml");
 
-    let mut reader = Reader::new(None, None, None, None);
+    let alms = alarm::create_alarms(&config.alarm.path);
+
+    let mut reader = Reader::new(config.broker);
     if let Err(e) = reader.connect().await {
         eprint!("Couldn't connect to rabbitMQ, {e}");
         return;
@@ -13,7 +16,7 @@ async fn main() {
 
     let (tx_alm, rx_alm) = mpsc::channel(100);
 
-    let mut server = Server::new(None, None);
+    let mut server = Server::new(config.server);
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
     let map_ack = server.get_map_ack();

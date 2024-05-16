@@ -8,6 +8,7 @@ use amqprs::{
 };
 use std::collections::HashMap;
 use tokio::sync::broadcast;
+use crate::config::BrokerConfig;
 
 const CHANNEL_CAPACITY: u16 = 10;
 const EXCHANGE_NAME: &str = "meas_exchange";
@@ -27,17 +28,13 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(
-        host: Option<&str>,
-        port: Option<u16>,
-        username: Option<&str>,
-        password: Option<&str>,
+    pub fn new(config: BrokerConfig
     ) -> Self {
         Self {
-            host: host.unwrap_or("localhost").to_owned(),
-            port: port.unwrap_or(5672),
-            username: username.unwrap_or("guest").to_owned(),
-            password: password.unwrap_or("guest").to_owned(),
+            host: config.ip,
+            port: config.port.parse().unwrap(),
+            username: config.username,
+            password: config.password,
             connection: None,
             channel: None,
             exchange_name: String::new(),
