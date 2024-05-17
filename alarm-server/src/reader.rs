@@ -1,3 +1,4 @@
+use crate::config::BrokerConfig;
 use amqprs::{
     callbacks::{DefaultChannelCallback, DefaultConnectionCallback},
     channel::{
@@ -8,7 +9,6 @@ use amqprs::{
 };
 use std::collections::HashMap;
 use tokio::sync::broadcast;
-use crate::config::BrokerConfig;
 
 const CHANNEL_CAPACITY: u16 = 10;
 const EXCHANGE_NAME: &str = "meas_exchange";
@@ -28,11 +28,10 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(config: BrokerConfig
-    ) -> Self {
+    pub fn new(config: BrokerConfig) -> Self {
         Self {
             host: config.ip,
-            port: config.port.parse().unwrap(),
+            port: config.port,
             username: config.username,
             password: config.password,
             connection: None,

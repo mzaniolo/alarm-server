@@ -1,11 +1,19 @@
 use alarm_server::{alarm, config, reader::Reader, server::Server};
 use tokio::sync::mpsc;
-use tokio_tungstenite::connect_async;
 
 #[tokio::main]
 async fn main() {
-    let config = config::read_config("examples/server_config.toml");
+    let config_path = std::env::args()
+        .nth(1)
+        .unwrap_or("examples/server_config.toml".to_string());
 
+    println!("Using config '{config_path}'");
+
+    let config = config::read_config(&config_path);
+    run(config).await
+}
+
+async fn run(config: config::Config) {
     let alms = alarm::create_alarms(&config.alarm.path);
 
     let mut reader = Reader::new(config.broker);
