@@ -1,5 +1,5 @@
 
 pub mod alarm;
-pub mod reader;
+pub mod broker;
 pub mod server;
 pub mod config;

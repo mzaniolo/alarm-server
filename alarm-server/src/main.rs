@@ -1,4 +1,4 @@
-use alarm_server::{alarm, config, reader::Reader, server::Server};
+use alarm_server::{alarm, broker::Broker, config, server::Server};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -16,11 +16,13 @@ async fn main() {
 async fn run(config: config::Config) {
     let alms = alarm::create_alarms(&config.alarm.path);
 
-    let mut reader = Reader::new(config.broker);
-    if let Err(e) = reader.connect().await {
+    let mut broker = Broker::new(config.broker);
+    if let Err(e) = broker.connect().await {
         eprint!("Couldn't connect to rabbitMQ, {e}");
         return;
     }
+
+    let mut reader = broker.create_reader().await.unwrap();
 
     let (tx_alm, rx_alm) = mpsc::channel(100);
 
