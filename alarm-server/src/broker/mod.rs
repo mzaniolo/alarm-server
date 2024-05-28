@@ -5,7 +5,9 @@ use amqprs::{
 };
 
 pub mod reader;
+pub mod writer;
 pub use crate::broker::reader::Reader;
+pub use crate::broker::writer::Writer;
 
 pub struct Broker {
     host: String,
@@ -49,9 +51,13 @@ impl Broker {
     pub async fn create_reader(&self) -> Result<Reader, Box<dyn std::error::Error>> {
         // open a channel on the connection
         let channel = self.connection.as_ref().unwrap().open_channel(None).await?;
-        channel
-            .register_callback(DefaultChannelCallback)
-            .await?;
+        channel.register_callback(DefaultChannelCallback).await?;
         Ok(Reader::new(channel))
+    }
+
+    pub async fn create_writer(&self) -> Result<Writer, Box<dyn std::error::Error>> {
+        let channel = self.connection.as_ref().unwrap().open_channel(None).await?;
+        channel.register_callback(DefaultChannelCallback).await?;
+        Ok(Writer::new(channel))
     }
 }

@@ -1,5 +1,5 @@
 use amqprs::channel::{
-    self, BasicAckArguments, BasicConsumeArguments, Channel, ExchangeDeclareArguments,
+    BasicAckArguments, BasicConsumeArguments, Channel, ExchangeDeclareArguments,
     QueueBindArguments, QueueDeclareArguments,
 };
 use std::collections::HashMap;
@@ -20,14 +20,13 @@ impl Reader {
     pub fn new(channel: Channel) -> Self {
         Self {
             channel: channel,
-            exchange_name: String::new(),
+            exchange_name: String::from(EXCHANGE_NAME),
             queue_name: String::new(),
             map: HashMap::new(),
         }
     }
 
     pub async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.exchange_name = String::from(EXCHANGE_NAME);
         let x_type = "direct";
         let x_args = ExchangeDeclareArguments::new(&self.exchange_name, x_type)
             .durable(true)
