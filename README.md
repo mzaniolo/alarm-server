@@ -110,3 +110,20 @@ So far the next steps are:
 
 > [!WARNING]
 > This is still a work in progress and is yet not production ready
+> 
+
+## Alarm flow
+This is the flow for evaluating an alarm
+
+```mermaid
+flowchart TD
+    A[New event] --> B{Ack?}
+    B --> |yes| C[(latest with ack)]
+    B --> |no| D{Is set?}
+    D --> |yes| E[(Insert set)]
+    D --> |no| F[(get latest state)]
+    F --> G{Latest is set?}
+    G --> |yes| H[(Insert reset
+    Keep ack)]
+    G --> |no| I[Ignore]
+```
