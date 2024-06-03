@@ -6,9 +6,9 @@ port = 5672
 username = "guest"
 password = "guest"
 
-[server]
-ip = "127.0.0.1"
-port = 8080
+[db]
+url = "http://localhost:9000"
+table = "Alarms"
 
 [alarm]
 path = "examples/config.yaml"

@@ -1,3 +1,4 @@
+use crate::db::DB;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
 
@@ -6,15 +7,17 @@ pub use create_alarm::create_alarms;
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
 pub enum AlarmSeverity {
-    High,
-    Medium,
-    Low,
+    High = 3,
+    Medium = 2,
+    Low = 1,
+    Unknown = 0,
 }
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
 pub enum AlarmState {
     Set,
     Reset,
+    Unknown,
 }
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
@@ -28,6 +31,7 @@ pub enum AlarmAck {
 pub struct AlarmStatus {
     pub name: String,
     pub state: AlarmState,
+    pub value: i64,
     pub severity: AlarmSeverity,
     pub ack: AlarmAck,
 }
@@ -35,80 +39,73 @@ pub struct AlarmStatus {
 #[derive(Debug)]
 pub struct Alarm {
     path: String,
+    severity: AlarmSeverity,
     set: i64,
     reset: i64,
     meas: String,
     rx_meas: Option<broadcast::Receiver<i64>>,
-    rx_ack: Option<mpsc::Receiver<bool>>,
     tx_publisher: Option<mpsc::Sender<AlarmStatus>>,
-
-    status: AlarmStatus,
+    db: Option<DB>,
 }
 
 impl Alarm {
     pub fn new(path: String, set: i64, reset: i64, severity: AlarmSeverity, meas: String) -> Self {
         Self {
             path: path.clone(),
+            severity,
             set,
             reset,
             meas,
             rx_meas: None,
-            rx_ack: None,
             tx_publisher: None,
-            status: AlarmStatus {
-                name: path,
-                state: AlarmState::Reset,
-                severity,
-                ack: AlarmAck::None,
-            },
+            db: None,
         }
     }
 
     pub async fn run(&mut self) {
         let rx = self.rx_meas.as_mut().unwrap();
-        let rx_ack = self.rx_ack.as_mut().unwrap();
-        loop {
-            tokio::select! {
-                Ok(value) = rx.recv() => {
-                    let mut updated = false;
-                    if value == self.set {
-                        self.status.state = AlarmState::Set;
-                        self.status.ack = AlarmAck::NotAck;
-                        updated = true;
-                    } else if value == self.reset && self.status.state != AlarmState::Reset{
-                        self.status.state = AlarmState::Reset;
-                        if self.status.ack == AlarmAck::Ack{
-                            self.status.ack = AlarmAck::None;
-                        }
-                        updated = true;
-                    }
 
-                    if updated{
-                        let _ = self
-                            .tx_publisher
-                            .as_ref()
-                            .unwrap()
-                            .send(self.status.clone())
-                            .await;
-                    }
-                },
-                Some(_) = rx_ack.recv() => {
-                    if self.status.ack == AlarmAck::NotAck{
-
-                        if self.status.state == AlarmState::Set {
-                            self.status.ack = AlarmAck::Ack;
-                        } else {
-                            self.status.ack = AlarmAck::None;
-                        }
-
-                        let _ = self
-                                .tx_publisher
-                                .as_ref()
-                                .unwrap()
-                                .send(self.status.clone())
+        while let Ok(value) = rx.recv().await {
+            if value == self.set {
+                let status = AlarmStatus {
+                    name: self.path.clone(),
+                    value: self.set,
+                    state: AlarmState::Set,
+                    severity: self.severity.clone(),
+                    ack: AlarmAck::NotAck,
+                };
+                Self::send_event(self.tx_publisher.as_ref().unwrap(), status.clone()).await;
+                self.db.as_ref().unwrap().insert_alm(status).await;
+            } else if value == self.reset {
+                let alm = self
+                    .db
+                    .as_ref()
+                    .unwrap()
+                    .get_latest_alm(self.path.clone())
+                    .await;
+                match alm {
+                    Some(alm) => {
+                        if alm.state != AlarmState::Reset {
+                            let status = AlarmStatus {
+                                name: self.path.clone(),
+                                value: self.reset,
+                                state: AlarmState::Reset,
+                                severity: self.severity.clone(),
+                                ack: if alm.ack == AlarmAck::Ack {
+                                    alm.ack
+                                } else {
+                                    AlarmAck::None
+                                },
+                            };
+                            Self::send_event(self.tx_publisher.as_ref().unwrap(), status.clone())
                                 .await;
+                            self.db.as_ref().unwrap().insert_alm(status).await;
+                        }
                     }
-                }
+                    _ => {
+                        eprintln!("Error reading the last status of {}", self.path);
+                    }
+                };
             }
         }
     }
@@ -123,11 +120,34 @@ impl Alarm {
     pub fn set_notifier(&mut self, tx: mpsc::Sender<AlarmStatus>) {
         self.tx_publisher = Some(tx);
     }
-    pub fn set_ack_listener(&mut self, rx: mpsc::Receiver<bool>) {
-        self.rx_ack = Some(rx);
+    pub fn set_db(&mut self, db: DB) {
+        self.db = Some(db);
     }
     pub fn get_path(&self) -> &str {
         &self.path
+    }
+
+    async fn send_event(tx: &mpsc::Sender<AlarmStatus>, status: AlarmStatus) {
+        let _ = tx.send(status).await;
+    }
+}
+
+pub async fn process_ack(
+    mut rx_ack: mpsc::Receiver<String>,
+    tx_publisher: mpsc::Sender<AlarmStatus>,
+    db: DB,
+) {
+    while let Some(path) = rx_ack.recv().await {
+        db.send_ack(&path).await;
+
+        let status = AlarmStatus {
+            name: path,
+            value: i64::MAX,
+            state: AlarmState::Unknown,
+            severity: AlarmSeverity::Unknown,
+            ack: AlarmAck::Ack,
+        };
+        Alarm::send_event(&tx_publisher, status).await;
     }
 }
 

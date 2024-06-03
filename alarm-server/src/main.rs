@@ -1,4 +1,4 @@
-use alarm_server::{alarm, broker::Broker, config, server::Server};
+use alarm_server::{alarm, broker::Broker, config, db};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -23,43 +23,40 @@ async fn run(config: config::Config) {
     }
 
     let mut reader = broker.create_reader().await.unwrap();
+    let _ = reader.connect().await;
 
-    let (tx_alm, rx_alm) = mpsc::channel(100);
+    let mut writer = broker.create_writer().await.unwrap();
+    let _ = writer.connect().await;
 
-    let mut server = Server::new(config.server);
+    let db = db::DB::new(config.db);
+
+    let (alm_tx, alm_rx) = mpsc::channel(100);
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
-    let map_ack = server.get_map_ack();
-    {
-        let mut map_ack = map_ack.lock().await;
 
-        for mut alm in alms.into_iter() {
-            alm.subscribe(reader.subscribe(alm.get_meas()).await);
-            alm.set_notifier(tx_alm.clone());
+    for mut alm in alms.into_iter() {
+        alm.subscribe(reader.subscribe(alm.get_meas()).await);
+        alm.set_notifier(alm_tx.clone());
+        alm.set_db(db.clone());
 
-            let (tx_ack, rx_ack) = mpsc::channel(2);
-            alm.set_ack_listener(rx_ack);
-            if let Some(_) = map_ack.insert(String::from(alm.get_path()), tx_ack) {
-                panic!("Got duplicated alarm {}", alm.get_path());
-            }
-
-            tasks.push(tokio::spawn(async move {
-                alm.run().await;
-            }));
-        }
+        tasks.push(tokio::spawn(async move {
+            alm.run().await;
+        }));
     }
+
+    writer.set_channel(alm_rx);
+
+    let (ack_tx, ack_rx) = mpsc::channel(100);
+    tokio::spawn(async move {
+        alarm::process_ack(ack_rx, alm_tx, db).await;
+    });
+    reader.set_ack_channel(ack_tx);
 
     println!("=== Set reader to receive ===");
     tokio::spawn(async move {
         reader.receive().await;
     });
 
-    println!("=== wait tasks ===");
-
-    let subscriptions = server.get_subscriptions();
-    let map_alm = server.get_map_alm();
-
-    tokio::spawn(async move { Server::listen_alarms(rx_alm, subscriptions, map_alm).await });
-
-    server.connect().await;
+    println!("=== Running writer ===");
+    writer.write().await;
 }

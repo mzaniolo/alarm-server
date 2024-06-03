@@ -15,6 +15,7 @@ pub struct Config {
     pub broker: BrokerConfig,
     pub server: ServerConfig,
     pub alarm: AlarmConfig,
+    pub db: DBConfig,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +48,15 @@ pub struct AlarmConfig {
     pub path: String,
 }
 
+#[derive(Deserialize)]
+pub struct DBConfig {
+    #[serde(default = "default_url")]
+    pub url: String,
+
+    #[serde(default = "default_table")]
+    pub table: String,
+}
+
 impl Default for AlarmConfig {
     fn default() -> Self {
         Self {
@@ -75,6 +85,15 @@ impl Default for BrokerConfig {
     }
 }
 
+impl Default for DBConfig {
+    fn default() -> Self {
+        Self {
+            url: default_url(),
+            table: default_table(),
+        }
+    }
+}
+
 fn default_ip() -> String {
     "127.0.0.1".to_string()
 }
@@ -85,6 +104,14 @@ fn default_cred() -> String {
 
 fn default_path() -> String {
     "examples/config.yaml".to_string()
+}
+
+fn default_url() -> String {
+    "http://localhost:9000".to_string()
+}
+
+fn default_table() -> String {
+    "Alarms".to_string()
 }
 
 const fn default_port<const T: u16>() -> u16 {

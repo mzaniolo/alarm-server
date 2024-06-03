@@ -1,2 +1,2 @@
 FROM rabbitmq:3.13
-RUN apt upgrade
+RUN apt update && apt install libssl-dev pkg-config
