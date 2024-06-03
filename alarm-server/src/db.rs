@@ -131,4 +131,13 @@ impl DB {
     fn build_full_url(url: &str, query: &str) -> String {
         format! {"{url}/exec?query={query}"}
     }
+
+    pub async fn try_create_table(&self) {
+        let query = "";
+        let _ = self
+            .client
+            .get(Self::build_full_url(&self.url, &query))
+            .send()
+            .await;
+    }
 }
