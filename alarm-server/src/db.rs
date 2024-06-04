@@ -133,7 +133,18 @@ impl DB {
     }
 
     pub async fn try_create_table(&self) {
-        let query = "";
+        let table = &self.table;
+        let query = format!(
+            "CREATE TABLE IF NOT EXISTS '{table}' (\
+            timestamp TIMESTAMP,\
+            path SYMBOL,\
+            state BOOLEAN,\
+            value SHORT,\
+            severity BYTE,\
+            ack BOOLEAN\
+          ) timestamp (timestamp) PARTITION BY MONTH WAL\
+          DEDUP UPSERT KEYS (timestamp, path);"
+        );
         let _ = self
             .client
             .get(Self::build_full_url(&self.url, &query))

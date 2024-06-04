@@ -29,6 +29,7 @@ async fn run(config: config::Config) {
     let _ = writer.connect().await;
 
     let db = db::DB::new(config.db);
+    db.try_create_table().await;
 
     let (alm_tx, alm_rx) = mpsc::channel(100);
 
