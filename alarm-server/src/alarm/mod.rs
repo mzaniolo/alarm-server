@@ -103,7 +103,7 @@ impl Alarm {
                         }
                     }
                     _ => {
-                        eprintln!("Error reading the last status of {}", self.path);
+                        // eprintln!("Error reading the last status of {}", self.path);
                     }
                 };
             }

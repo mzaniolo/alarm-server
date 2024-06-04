@@ -46,11 +46,6 @@ impl Reader {
             .finish();
         (self.queue_name, _, _) = self.channel.queue_declare(q_args).await?.unwrap();
 
-        let q_args = QueueDeclareArguments::new("")
-            .durable(false)
-            .exclusive(true)
-            .finish();
-        (self.ack_queue, _, _) = self.channel.queue_declare(q_args).await?.unwrap();
         self.bind_ack().await;
 
         Ok(())
@@ -146,7 +141,22 @@ impl Reader {
         }
     }
 
-    async fn bind_ack(&self) {
+    async fn bind_ack(&mut self) {
+        let x_type = "direct";
+        let x_args = ExchangeDeclareArguments::new(&self.ack_exchange, x_type)
+            .durable(true)
+            .finish();
+        self.channel.exchange_declare(x_args).await.unwrap();
+
+        println!("conn open: {}", self.channel.is_connection_open());
+        println!("channel open: {}", self.channel.is_open());
+
+        let q_args = QueueDeclareArguments::new("")
+            .durable(false)
+            .exclusive(true)
+            .finish();
+        (self.ack_queue, _, _) = self.channel.queue_declare(q_args).await.unwrap().unwrap();
+
         self.channel
             .queue_bind(QueueBindArguments::new(
                 &self.ack_queue,

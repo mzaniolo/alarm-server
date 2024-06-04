@@ -1,6 +1,6 @@
 use amqprs::{
     callbacks::{DefaultChannelCallback, DefaultConnectionCallback},
-    channel::{BasicPublishArguments, ExchangeDeclareArguments},
+    channel::{BasicPublishArguments, Channel, ExchangeDeclareArguments},
     connection::{Connection, OpenConnectionArguments},
     BasicProperties,
 };
@@ -24,6 +24,20 @@ async fn main() -> Result<(), Box<TError>> {
     let ch = conn.open_channel(None).await.unwrap();
     ch.register_callback(DefaultChannelCallback).await.unwrap();
 
+    let ch2 = conn.open_channel(None).await.unwrap();
+    ch2.register_callback(DefaultChannelCallback).await.unwrap();
+
+    tokio::spawn(async move { send_ack(ch2).await });
+
+    send_meas(ch).await;
+
+    // ch.close().await.unwrap();
+    // conn.close().await.unwrap();
+
+    Ok(())
+}
+
+async fn send_meas(ch: Channel) {
     let x_name = "meas_exchange";
     let x_type = "direct";
     let x_args = ExchangeDeclareArguments::new(x_name, x_type)
@@ -31,7 +45,7 @@ async fn main() -> Result<(), Box<TError>> {
         .finish();
     ch.exchange_declare(x_args).await.unwrap();
 
-    let routing_keys: Vec<_> = vec!["my_path.my_meas", "my_path2.my_meas"];
+    let routing_keys: Vec<_> = vec!["my_path.my_meas", "my_path2.my_meas", "my_path.my_meas"];
 
     let mut value: i64 = 0;
     let mut flag = false;
@@ -65,9 +79,32 @@ async fn main() -> Result<(), Box<TError>> {
         }
         thread::sleep(sleep_time);
     }
+}
 
-    // ch.close().await.unwrap();
-    // conn.close().await.unwrap();
+async fn send_ack(ch: Channel) {
+    let x_name = "ack_exchange";
+    let x_type = "direct";
+    let x_args = ExchangeDeclareArguments::new(x_name, x_type)
+        .durable(true)
+        .finish();
+    ch.exchange_declare(x_args).await.unwrap();
 
-    Ok(())
+    let alms = vec!["sub1/alarm1", "sub1/alarm2", "sub2/alarm1", "sub2/alarm2"];
+
+    let sleep_time = time::Duration::from_millis(800);
+    loop {
+        for alm in alms.iter() {
+            let publish_args = BasicPublishArguments::new(x_name, "ack");
+            // publish messages as persistent
+            let props = BasicProperties::default().with_delivery_mode(2).finish();
+            ch.basic_publish(props, alm.to_string().into_bytes(), publish_args)
+                .await
+                .unwrap();
+
+            println!(" [x] Sent ack to {}", alm);
+
+            thread::sleep(sleep_time);
+        }
+        thread::sleep(sleep_time);
+    }
 }

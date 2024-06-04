@@ -1,7 +1,7 @@
 use crate::alarm::{AlarmAck, AlarmState, AlarmStatus};
 use crate::config::DBConfig;
 use chrono::{DateTime, Utc};
-use reqwest::Client;
+use reqwest::{Client, Url};
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -45,6 +45,8 @@ impl DB {
 
     pub async fn insert_alm(&self, alm: AlarmStatus) {
         let now: DateTime<Utc> = Utc::now();
+
+        println!("insert state: {alm:?}");
 
         let timestamp = now.to_rfc3339();
         let table = &self.table;
@@ -92,6 +94,7 @@ impl DB {
 
         if resp.status() != 200 {
             eprintln!("Error getting latest alm for {path}");
+            eprintln!("response: {}", resp.text().await.unwrap());
             return None;
         }
 
@@ -111,16 +114,17 @@ impl DB {
             }
         };
 
+        let data = &json["dataset"][0];
         Some(AlarmStatus {
-            name: json["name"].to_string(),
-            state: if json["state"].is_boolean() && json["state"].as_bool().unwrap() {
+            name: data[0].to_string(),
+            state: if data[1].is_boolean() && data[1].as_bool().unwrap() {
                 AlarmState::Set
             } else {
                 AlarmState::Reset
             },
             value: i64::MAX,
             severity: crate::alarm::AlarmSeverity::High,
-            ack: if json["ack"].is_boolean() && json["ack"].as_bool().unwrap() {
+            ack: if data[2].is_boolean() && data[2].as_bool().unwrap() {
                 AlarmAck::Ack
             } else {
                 AlarmAck::NotAck
@@ -129,10 +133,15 @@ impl DB {
     }
 
     fn build_full_url(url: &str, query: &str) -> String {
-        format! {"{url}/exec?query={query}"}
+        let base = format! {"{url}/exec?query={query}"};
+        Url::parse_with_params(&base, &[("query", query)])
+            .unwrap()
+            .as_str()
+            .to_string()
     }
 
     pub async fn try_create_table(&self) {
+        println!("Creating table");
         let table = &self.table;
         let query = format!(
             "CREATE TABLE IF NOT EXISTS '{table}' (\
@@ -142,13 +151,23 @@ impl DB {
             value SHORT,\
             severity BYTE,\
             ack BOOLEAN\
-          ) timestamp (timestamp) PARTITION BY MONTH WAL\
+          ) timestamp (timestamp) PARTITION BY MONTH WAL \
           DEDUP UPSERT KEYS (timestamp, path);"
         );
-        let _ = self
+        let resp = self
             .client
             .get(Self::build_full_url(&self.url, &query))
             .send()
             .await;
+        match resp {
+            Ok(out) => {
+                println!("status: {}", out.status());
+                let body = out.text().await.unwrap();
+                println!("body: {body}");
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+            }
+        };
     }
 }
