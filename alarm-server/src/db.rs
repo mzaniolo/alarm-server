@@ -20,6 +20,7 @@ impl DB {
     }
 
     pub async fn send_ack(&self, path: &str) {
+        println!("Insert ack to {path}");
         let now: DateTime<Utc> = Utc::now();
 
         let timestamp = now.to_rfc3339();
