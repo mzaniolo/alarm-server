@@ -1,15 +1,10 @@
 # alarm-server
 
-This server is intended to read measurements from a RabbitMQ server and send alarms over a Websocket to a browser.
+This server is intended to read measurements from a RabbitMQ server and send alarms back to the same server. The alarm server also uses a QuestDB to keep the history of alarms and get the status of the last alarms
 
 ## Server
 
-The server is based on Tokio framework. The server uses a simple protocol over Websocket to communicate with the browser. This server is still under development and so far only support a very simple alarm type where it will set the alarm if the meas is equal to the set value. The reset works the same way.
-
-## Client
-
-At [wasm-client](./wasm-client) there is a client that implements this protocol. The client is a simple wrap around the JavaScript websocket that implements the protocol and add extra methods to interact with the server.
-The client is written in Rust and compiled to wasm to be imported in the browser.
+The server is based on Tokio framework. This server is still under development and so far only support a very simple alarm type where it will set the alarm if the meas is equal to the set value. The reset works the same way.
 
 
 ## Building
@@ -23,35 +18,15 @@ For following the next steps is required to have working installation of rust to
 To build the server we can simple got to the server folder and build it using cargo
 
 ```bash
-cd alarm-server
 cargo build
 ```
 This will build a debugable version (without optimizations) in <repo_root>/target/debug. If you wan't to build a release version use the following command
 
 ```bash
-cd alarm-server
 cargo build --release
 ```
 
 the output dir will be in this case <repo_root>/target/release
-
-
-### Client
-To build the client these steps can be followed:
-
-1- Install wasm-pack
-```bash
-curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-```
-
-2- run wasm-pack from the client folder
-```bash
-cd wasm-client
-wasm-pack build --target web
-```
-
-At [index.html](./wasm-client/index.html) There is an example on how to import and use the client
-
 
 ## Running
 
@@ -68,31 +43,8 @@ All this configuration will, in the near future, be configurable using a file. H
 To run the server we can run the build binary or we can let cargo build and run it for us using this:
 
 ```bash
-cd alarm-server
 cargo run
 ```
-
-For the client all that's needed is to import it on the webpage like this:
-```html
-<script type="module">
-    import init, { AlarmClient } from "./pkg/wasm_client.js";
-    let interval;
-    let alm_srv
-    init().then(
-        alm_srv = new AlarmClient(addr);
-        alm_srv.set_onopen(function () {
-        console.log("ws open");
-
-        // to Keep the connection alive
-        interval = setInterval(() => {
-          alm_srv.send_keep_alive();
-        }, 12000);
-      })
-    )
-</script>
-```
-
-A more detailed documentation on how to use the client and all the available methods will be created in the future.
 
 ## What's next?
 
