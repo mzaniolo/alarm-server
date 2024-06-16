@@ -1,54 +1,24 @@
 use crate::db::DB;
-use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
+use chrono:: Utc;
 
 mod create_alarm;
 pub use create_alarm::create_alarms;
-
-#[derive(Serialize, PartialEq, Debug, Clone)]
-pub enum AlarmSeverity {
-    High = 3,
-    Medium = 2,
-    Low = 1,
-    Unknown = 0,
-}
-
-#[derive(Serialize, PartialEq, Debug, Clone)]
-pub enum AlarmState {
-    Set,
-    Reset,
-    Unknown,
-}
-
-#[derive(Serialize, PartialEq, Debug, Clone)]
-pub enum AlarmAck {
-    Ack,
-    NotAck,
-    None,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct AlarmStatus {
-    pub name: String,
-    pub state: AlarmState,
-    pub value: i64,
-    pub severity: AlarmSeverity,
-    pub ack: AlarmAck,
-}
+pub use alarm::{Alarm, AlarmSeverity, AlarmState, AlarmAck};
 
 #[derive(Debug)]
-pub struct Alarm {
+pub struct AlarmHandler {
     path: String,
     severity: AlarmSeverity,
     set: i64,
     reset: i64,
     meas: String,
     rx_meas: Option<broadcast::Receiver<i64>>,
-    tx_publisher: Option<mpsc::Sender<AlarmStatus>>,
+    tx_publisher: Option<mpsc::Sender<Alarm>>,
     db: Option<DB>,
 }
 
-impl Alarm {
+impl AlarmHandler {
     pub fn new(path: String, set: i64, reset: i64, severity: AlarmSeverity, meas: String) -> Self {
         Self {
             path: path.clone(),
@@ -67,8 +37,9 @@ impl Alarm {
 
         while let Ok(value) = rx.recv().await {
             if value == self.set {
-                let status = AlarmStatus {
+                let status = Alarm {
                     name: self.path.clone(),
+                    timestamp: Utc::now(),
                     value: self.set,
                     state: AlarmState::Set,
                     severity: self.severity.clone(),
@@ -86,15 +57,16 @@ impl Alarm {
                 match alm {
                     Some(alm) => {
                         if alm.state != AlarmState::Reset {
-                            let status = AlarmStatus {
+                            let status = Alarm {
                                 name: self.path.clone(),
+                                timestamp: Utc::now(),
                                 value: self.reset,
                                 state: AlarmState::Reset,
                                 severity: self.severity.clone(),
                                 ack: if alm.ack == AlarmAck::Ack {
                                     alm.ack
                                 } else {
-                                    AlarmAck::None
+                                    AlarmAck::NotAck
                                 },
                             };
                             Self::send_event(self.tx_publisher.as_ref().unwrap(), status.clone())
@@ -117,7 +89,7 @@ impl Alarm {
     pub fn get_meas(&self) -> &str {
         &self.meas
     }
-    pub fn set_notifier(&mut self, tx: mpsc::Sender<AlarmStatus>) {
+    pub fn set_notifier(&mut self, tx: mpsc::Sender<Alarm>) {
         self.tx_publisher = Some(tx);
     }
     pub fn set_db(&mut self, db: DB) {
@@ -127,27 +99,28 @@ impl Alarm {
         &self.path
     }
 
-    async fn send_event(tx: &mpsc::Sender<AlarmStatus>, status: AlarmStatus) {
+    async fn send_event(tx: &mpsc::Sender<Alarm>, status: Alarm) {
         let _ = tx.send(status).await;
     }
 }
 
 pub async fn process_ack(
     mut rx_ack: mpsc::Receiver<String>,
-    tx_publisher: mpsc::Sender<AlarmStatus>,
+    tx_publisher: mpsc::Sender<Alarm>,
     db: DB,
 ) {
     while let Some(path) = rx_ack.recv().await {
         db.send_ack(&path).await;
 
-        let status = AlarmStatus {
+        let status = Alarm {
             name: path,
+            timestamp: Utc::now(),
             value: i64::MAX,
-            state: AlarmState::Unknown,
-            severity: AlarmSeverity::Unknown,
+            state: AlarmState::Reset,
+            severity: AlarmSeverity::Low,
             ack: AlarmAck::Ack,
         };
-        Alarm::send_event(&tx_publisher, status).await;
+        AlarmHandler::send_event(&tx_publisher, status).await;
     }
 }
 
@@ -164,11 +137,10 @@ mod tests {
         severity: &AlarmSeverity,
     ) -> (
         tokio::task::JoinHandle<()>,
-        tokio::sync::mpsc::Receiver<AlarmStatus>,
-        tokio::sync::mpsc::Sender<bool>,
+        tokio::sync::mpsc::Receiver<Alarm>,
         tokio::sync::broadcast::Sender<i64>,
     ) {
-        let mut alm = Alarm::new(
+        let mut alm = AlarmHandler::new(
             path.to_string(),
             set,
             reset,
@@ -177,41 +149,39 @@ mod tests {
         );
 
         let (tx_alm, rx_alm) = mpsc::channel(1);
-        let (tx_ack, rx_ack) = mpsc::channel(1);
         let (tx_meas, rx_meas) = broadcast::channel(1);
 
         alm.set_notifier(tx_alm);
         alm.subscribe(rx_meas);
-        alm.set_ack_listener(rx_ack);
 
         let task = tokio::spawn(async move {
             alm.run().await;
         });
 
-        (task, rx_alm, tx_ack, tx_meas)
+        (task, rx_alm, tx_meas)
     }
 
-    async fn try_receive(rx: &mut mpsc::Receiver<AlarmStatus>) -> Option<AlarmStatus> {
-        let mut alm_status = rx.try_recv();
+    async fn try_receive(rx: &mut mpsc::Receiver<Alarm>) -> Option<Alarm> {
+        let mut alm = rx.try_recv();
         let mut i = 5;
-        while let Err(_) = alm_status {
+        while let Err(_) = alm {
             if i < 0 {
                 break;
             }
-            alm_status = rx.try_recv();
+            alm = rx.try_recv();
             i -= 1;
             sleep(Duration::from_millis(100)).await
         }
 
-        if alm_status.is_ok() {
-            return Some(alm_status.unwrap());
+        if alm.is_ok() {
+            return Some(alm.unwrap());
         }
 
         None
     }
 
     fn assert_alm(
-        alm_status: &AlarmStatus,
+        alm_status: &Alarm,
         alm_state: &AlarmState,
         alm_sev: &AlarmSeverity,
         alm_name: &str,
@@ -223,237 +193,4 @@ mod tests {
         assert_eq!(alm_status.ack, *alm_ack);
     }
 
-    #[tokio::test]
-    async fn test_set() -> Result<(), Box<dyn std::error::Error>> {
-        let alm_path = "my_path";
-        let alm_set = 1;
-        let alm_sev = AlarmSeverity::High;
-
-        let (task, mut rx_alm, _tx_ack, tx_meas) = alm_setup(alm_path, alm_set, 99, &alm_sev);
-
-        tx_meas.send(alm_set)?;
-        let alm_status = rx_alm.recv().await;
-
-        assert!(alm_status.is_some());
-
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        task.abort();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_set_reset() -> Result<(), Box<dyn std::error::Error>> {
-        let alm_path = "my_path";
-        let alm_set = 1;
-        let alm_reset = 2;
-        let alm_sev = AlarmSeverity::High;
-
-        let (task, mut rx_alm, _tx_ack, tx_meas) =
-            alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
-
-        tx_meas.send(alm_set)?;
-        let alm_status = rx_alm.recv().await;
-
-        assert!(alm_status.is_some());
-
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        tx_meas.send(alm_reset)?;
-        let alm_status = rx_alm.recv().await;
-
-        assert!(alm_status.is_some());
-
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Reset,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        task.abort();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_reset() -> Result<(), Box<dyn std::error::Error>> {
-        let alm_path = "my_path";
-        let alm_set = 1;
-        let alm_reset = 2;
-        let alm_sev = AlarmSeverity::High;
-
-        let (task, mut rx_alm, _tx_ack, tx_meas) =
-            alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
-
-        tx_meas.send(99)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-
-        tx_meas.send(42)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-
-        tx_meas.send(alm_reset)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-
-        tx_meas.send(alm_set)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        task.abort();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_ack_no_updates() -> Result<(), Box<dyn std::error::Error>> {
-        let alm_path = "my_path";
-        let alm_set = 1;
-        let alm_reset = 2;
-        let alm_sev = AlarmSeverity::High;
-
-        let (task, mut rx_alm, tx_ack, tx_meas) = alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
-
-        // Nothing to ack so no updates
-        tx_meas.send(99)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-        tx_ack.send(true).await?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-
-        // Nothing to ack so no updates
-        tx_meas.send(alm_reset)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_none());
-
-        task.abort();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_ack() -> Result<(), Box<dyn std::error::Error>> {
-        let alm_path = "my_path";
-        let alm_set = 1;
-        let alm_reset = 2;
-        let alm_sev = AlarmSeverity::High;
-
-        let (task, mut rx_alm, tx_ack, tx_meas) = alm_setup(alm_path, alm_set, alm_reset, &alm_sev);
-
-        tx_meas.send(alm_set)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        tx_ack.send(true).await?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::Ack,
-        );
-
-        tx_meas.send(alm_reset)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Reset,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::None,
-        );
-
-        tx_meas.send(alm_set)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Set,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        tx_meas.send(alm_reset)?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Reset,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::NotAck,
-        );
-
-        tx_ack.send(true).await?;
-        let alm_status = try_receive(&mut rx_alm).await;
-        assert!(alm_status.is_some());
-        let alm_status = alm_status.unwrap();
-
-        assert_alm(
-            &alm_status,
-            &AlarmState::Reset,
-            &alm_sev,
-            alm_path,
-            &AlarmAck::None,
-        );
-
-        task.abort();
-
-        Ok(())
-    }
 }

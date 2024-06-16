@@ -1,4 +1,4 @@
-use crate::alarm::AlarmStatus;
+use crate::alarm::Alarm;
 use amqprs::{
     channel::{BasicPublishArguments, Channel, ExchangeDeclareArguments},
     BasicProperties,
@@ -11,7 +11,7 @@ pub struct Writer {
     channel: Channel,
     exchange_name: String,
     publish_args: BasicPublishArguments,
-    rx: Option<mpsc::Receiver<AlarmStatus>>,
+    rx: Option<mpsc::Receiver<Alarm>>,
 }
 
 impl Writer {
@@ -46,7 +46,7 @@ impl Writer {
         }
     }
 
-    pub fn set_channel(&mut self, rx: mpsc::Receiver<AlarmStatus>) {
+    pub fn set_channel(&mut self, rx: mpsc::Receiver<Alarm>) {
         self.rx = Some(rx);
     }
 }

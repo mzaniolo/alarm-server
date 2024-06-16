@@ -1,4 +1,4 @@
-use crate::alarm::{AlarmAck, AlarmState, AlarmStatus};
+use crate::alarm::{AlarmAck, AlarmState, Alarm};
 use crate::config::DBConfig;
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Url};
@@ -29,7 +29,7 @@ impl DB {
         let query = format! {"insert into {table} \
         select \
         '{timestamp}' timestamp, \
-        '{path}' path, \
+        '{path}' name, \
         state, \
         value, \
         severity, \
@@ -44,12 +44,10 @@ impl DB {
             .await;
     }
 
-    pub async fn insert_alm(&self, alm: AlarmStatus) {
-        let now: DateTime<Utc> = Utc::now();
-
+    pub async fn insert_alm(&self, alm: Alarm) {
         println!("insert state: {alm:?}");
 
-        let timestamp = now.to_rfc3339();
+        let timestamp = alm.timestamp.to_rfc3339();
         let table = &self.table;
         let name = alm.name;
         let state = alm.state == AlarmState::Set;
@@ -71,12 +69,12 @@ impl DB {
             .await;
     }
 
-    pub async fn get_latest_alm(&self, path: String) -> Option<AlarmStatus> {
+    pub async fn get_latest_alm(&self, name: String) -> Option<Alarm> {
         let table = &self.table;
-
+        
         let query = format! {
-        "SELECT path, state, ack FROM {table} \
-        WHERE path = '{path}' \
+        "SELECT name, state, ack FROM {table} \
+        WHERE name = '{name}' \
         LIMIT -1"};
 
         let resp = self
@@ -94,7 +92,7 @@ impl DB {
         };
 
         if resp.status() != 200 {
-            eprintln!("Error getting latest alm for {path}");
+            eprintln!("Error getting latest alm for {name}");
             eprintln!("response: {}", resp.text().await.unwrap());
             return None;
         }
@@ -116,7 +114,8 @@ impl DB {
         };
 
         let data = &json["dataset"][0];
-        Some(AlarmStatus {
+        Some(Alarm {
+            timestamp: Utc::now(),
             name: data[0].to_string(),
             state: if data[1].is_boolean() && data[1].as_bool().unwrap() {
                 AlarmState::Set
@@ -147,8 +146,8 @@ impl DB {
         let query = format!(
             "CREATE TABLE IF NOT EXISTS '{table}' (\
             timestamp TIMESTAMP,\
-            path SYMBOL,\
-            state BOOLEAN,\
+            name SYMBOL,\
+            state SYMBOL,\
             value SHORT,\
             severity BYTE,\
             ack BOOLEAN\

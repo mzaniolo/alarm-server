@@ -8,8 +8,8 @@ pub fn load_config(path: &str) -> Yaml {
     YamlLoader::load_from_str(&source).unwrap().remove(0)
 }
 
-pub fn create_alarms(config_path: &str) -> Vec<alarm::Alarm> {
-    let mut alarms: Vec<alarm::Alarm> = Vec::new();
+pub fn create_alarms(config_path: &str) -> Vec<alarm::AlarmHandler> {
+    let mut alarms: Vec<alarm::AlarmHandler> = Vec::new();
 
     let config = load_config(config_path);
 
@@ -17,7 +17,7 @@ pub fn create_alarms(config_path: &str) -> Vec<alarm::Alarm> {
         for (area, alm) in h {
             if let Yaml::Hash(h) = alm {
                 for (alm_name, values) in h {
-                    alarms.push(alarm::Alarm::new(
+                    alarms.push(alarm::AlarmHandler::new(
                         format!("{}/{}", area.as_str().unwrap(), alm_name.as_str().unwrap()),
                         values["set"].as_i64().expect("Alarm need field 'set'"),
                         values["reset"].as_i64().expect("Alarm need field 'reset'"),
