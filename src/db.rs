@@ -1,7 +1,7 @@
 use crate::alarm::{AlarmAck, AlarmState, Alarm};
 use crate::config::DBConfig;
 use chrono::{DateTime, Utc};
-use reqwest::{Client, Url};
+use reqwest::{Client, Url, Response, Error};
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -19,8 +19,8 @@ impl DB {
         }
     }
 
-    pub async fn send_ack(&self, path: &str) {
-        println!("Insert ack to {path}");
+    pub async fn send_ack(&self, name: &str) {
+        println!("Insert ack to {name}");
         let now: DateTime<Utc> = Utc::now();
 
         let timestamp = now.to_rfc3339();
@@ -29,13 +29,13 @@ impl DB {
         let query = format! {"insert into {table} \
         select \
         '{timestamp}' timestamp, \
-        '{path}' name, \
+        '{name}' name, \
         state, \
         value, \
         severity, \
         true \
         from {table} \
-        where path = '{path}' \
+        where name = '{name}' \
         limit -1;"};
         let _ = self
             .client
@@ -50,23 +50,24 @@ impl DB {
         let timestamp = alm.timestamp.to_rfc3339();
         let table = &self.table;
         let name = alm.name;
-        let state = alm.state == AlarmState::Set;
+        let state = alm.state;
         let value = alm.value;
-        let severity = alm.severity as u8;
+        let severity = alm.severity;
         let ack = alm.ack == AlarmAck::Ack;
 
         let query = format! {"INSERT INTO {table} VALUES (\
         '{timestamp}',\
         '{name}',\
-        {state},\
+        '{state}',\
         {value},\
-        {severity},\
+        '{severity}',\
         {ack});"};
-        let _ = self
+        let resp = self
             .client
             .get(Self::build_full_url(&self.url, &query))
             .send()
             .await;
+        let _ = Self::get_body(resp).await;
     }
 
     pub async fn get_latest_alm(&self, name: String) -> Option<Alarm> {
@@ -83,26 +84,9 @@ impl DB {
             .send()
             .await;
 
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Error on http request - Error: {e}");
-                return None;
-            }
-        };
-
-        if resp.status() != 200 {
-            eprintln!("Error getting latest alm for {name}");
-            eprintln!("response: {}", resp.text().await.unwrap());
-            return None;
-        }
-
-        let body = match resp.text().await {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("Error getting the response body - Error: {e}");
-                return None;
-            }
+        let body = match Self::get_body(resp).await{
+            Some(body) => body,
+            None => return None,
         };
 
         let json: serde_json::Value = match serde_json::from_str(&body) {
@@ -132,6 +116,31 @@ impl DB {
         })
     }
 
+    async fn get_body(req: Result<Response, Error>) -> Option<String>{
+        let resp = match req {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Error on http request - Error: {e}");
+                return None;
+            }
+        };
+
+        if resp.status() != 200 {
+            eprintln!("response: {}", resp.text().await.unwrap());
+            return None;
+        }
+
+        let body = match resp.text().await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Error getting the response body - Error: {e}");
+                return None;
+            }
+        };
+
+        Some(body)
+    }
+
     fn build_full_url(url: &str, query: &str) -> String {
         let base = format! {"{url}/exec?query={query}"};
         Url::parse_with_params(&base, &[("query", query)])
@@ -149,7 +158,7 @@ impl DB {
             name SYMBOL,\
             state SYMBOL,\
             value SHORT,\
-            severity BYTE,\
+            severity SYMBOL,\
             ack BOOLEAN\
           ) timestamp (timestamp) PARTITION BY MONTH WAL \
           DEDUP UPSERT KEYS (timestamp, name);"
