@@ -152,7 +152,7 @@ impl DB {
             severity BYTE,\
             ack BOOLEAN\
           ) timestamp (timestamp) PARTITION BY MONTH WAL \
-          DEDUP UPSERT KEYS (timestamp, path);"
+          DEDUP UPSERT KEYS (timestamp, name);"
         );
         let resp = self
             .client
