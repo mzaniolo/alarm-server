@@ -17,7 +17,7 @@ pub struct Writer {
 impl Writer {
     pub fn new(channel: Channel) -> Self {
         Self {
-            channel: channel,
+            channel,
             exchange_name: EXCHANGE_NAME.to_string(),
             publish_args: BasicPublishArguments::new(EXCHANGE_NAME, ""),
             rx: None,

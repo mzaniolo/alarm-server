@@ -2,80 +2,58 @@ use amqprs::channel::{
     BasicAckArguments, BasicConsumeArguments, Channel, ExchangeDeclareArguments,
     QueueBindArguments, QueueDeclareArguments,
 };
-use std::collections::HashMap;
-use tokio::sync::{broadcast, mpsc};
+use async_channel;
+use tokio::sync::mpsc;
 
-const CHANNEL_CAPACITY: u16 = 10;
-const MEAS_EXCHANGE: &str = "meas_exchange";
+const ALM_EXCHANGE: &str = "alm_trg_exchange";
 const ACK_EXCHANGE: &str = "ack_exchange";
 
 pub struct Reader {
     channel: Channel,
-    meas_exchange: String,
+    alm_exchange: String,
     ack_exchange: String,
     queue_name: String,
     ack_queue: String,
-
-    map: HashMap<String, broadcast::Sender<i64>>,
     ack_tx: Option<mpsc::Sender<String>>,
+    alm_tx: Option<async_channel::Sender<String>>,
 }
 
 impl Reader {
     pub fn new(channel: Channel) -> Self {
         Self {
             channel: channel,
-            meas_exchange: String::from(MEAS_EXCHANGE),
+            alm_exchange: String::from(ALM_EXCHANGE),
             ack_exchange: String::from(ACK_EXCHANGE),
             queue_name: String::new(),
             ack_queue: String::new(),
-            map: HashMap::new(),
             ack_tx: None,
+            alm_tx: None,
         }
     }
 
     pub async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let x_type = "direct";
-        let x_args = ExchangeDeclareArguments::new(&self.meas_exchange, x_type)
+        let x_args = ExchangeDeclareArguments::new(&self.alm_exchange, "direct")
             .durable(true)
             .finish();
         self.channel.exchange_declare(x_args).await?;
 
         let q_args = QueueDeclareArguments::new("")
             .durable(false)
-            .exclusive(true)
             .finish();
         (self.queue_name, _, _) = self.channel.queue_declare(q_args).await?.unwrap();
 
-        self.bind_ack().await;
-
-        Ok(())
-    }
-
-    pub async fn subscribe(&mut self, meas: &str) -> broadcast::Receiver<i64> {
-        if let Some(tx) = self.map.get(meas) {
-            return tx.subscribe();
-        }
-
-        println!("creating the route. meas: {meas}");
-        println!("conn open: {}", self.channel.is_connection_open());
-        println!("channel open: {}", self.channel.is_open());
-
-        // Every meas path will be a route key. This way the receiver can select only the
-        //  meas that are needed. If this scales a lot this may turn out to be a bad idea.
-        // Needs a test to see how well this thing would scale.
         self.channel
             .queue_bind(QueueBindArguments::new(
                 &self.queue_name,
-                &self.meas_exchange,
-                meas,
+                &self.alm_exchange,
+                "",
             ))
             .await
             .unwrap();
 
-        let (tx, rx) = broadcast::channel(CHANNEL_CAPACITY.into());
-        self.map.insert(meas.to_owned(), tx);
+        self.bind_ack().await;
 
-        rx
+        Ok(())
     }
 
     pub async fn receive(&self) {
@@ -95,18 +73,11 @@ impl Reader {
             tokio::select! {
                 Some(msg) = rx.recv() => {
                     if let Some(payload) = msg.content {
-                        let mut meas = String::new();
-                        if let Some(deliver) = msg.deliver.as_ref() {
-                            meas = deliver.routing_key().clone();
-                        }
 
-                        let value: i32 = std::str::from_utf8(&payload).unwrap().parse().unwrap();
-
-                        // println!(" [x] Received {value} from {meas}",);
-
-                        if let Err(e) = self.map.get(&meas).unwrap().send(value.into()) {
+                        let payload = std::str::from_utf8(&payload).unwrap();
+                        if let Err(e) = self.alm_tx.as_ref().unwrap().send(payload.to_string()).await {
                             eprintln!(
-                                "Error sending value '{value}' to alarms subscribed to '{meas}' - {e}"
+                                "Error sending value '{payload}' - {e}"
                             )
                         }
 
@@ -169,5 +140,9 @@ impl Reader {
 
     pub fn set_ack_channel(&mut self, ack_tx: mpsc::Sender<String>) {
         self.ack_tx = Some(ack_tx);
+    }
+
+    pub fn set_alm_channel(&mut self, alm_tx: async_channel::Sender<String>) {
+        self.alm_tx = Some(alm_tx);
     }
 }

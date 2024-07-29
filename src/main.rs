@@ -1,4 +1,4 @@
-use alarm_server::{alarm, broker::Broker, config, db};
+use alarm_server::{alarm::{self, AlarmHandler}, broker::Broker, config, db};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -14,7 +14,9 @@ async fn main() {
 }
 
 async fn run(config: config::Config) {
-    let alms = alarm::create_alarms(&config.alarm.path);
+
+    let (alm_tx, alm_rx) = mpsc::channel(100);
+    let (trg_tx, trg_rx) = async_channel::bounded(100);
 
     let mut broker = Broker::new(config.broker);
     if let Err(e) = broker.connect().await {
@@ -24,28 +26,32 @@ async fn run(config: config::Config) {
 
     let mut reader = broker.create_reader().await.unwrap();
     let _ = reader.connect().await;
+    reader.set_alm_channel(trg_tx);
 
     let mut writer = broker.create_writer().await.unwrap();
     let _ = writer.connect().await;
+    writer.set_channel(alm_rx);
 
     let db = db::DB::new(config.db);
     db.try_create_table().await;
 
-    let (alm_tx, alm_rx) = mpsc::channel(100);
+    let cache = cache::Cache::new().await;
 
     let mut tasks: Vec<tokio::task::JoinHandle<_>> = Vec::new();
 
-    for mut alm in alms.into_iter() {
-        alm.subscribe(reader.subscribe(alm.get_meas()).await);
-        alm.set_notifier(alm_tx.clone());
-        alm.set_db(db.clone());
+    for _ in 0..10 {
+        let mut alm = AlarmHandler::new(
+            trg_rx.clone(),
+            alm_tx.clone(),
+            db.clone(),
+            cache.clone()
+        );
 
         tasks.push(tokio::spawn(async move {
             alm.run().await;
         }));
     }
 
-    writer.set_channel(alm_rx);
 
     let (ack_tx, ack_rx) = mpsc::channel(100);
     tokio::spawn(async move {

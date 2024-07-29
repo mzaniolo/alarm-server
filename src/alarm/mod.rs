@@ -1,102 +1,77 @@
 use crate::db::DB;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
+use async_channel;
 use chrono:: Utc;
+use cache::Cache;
 
-mod create_alarm;
-pub use create_alarm::create_alarms;
-pub use alarm::{Alarm, AlarmSeverity, AlarmState, AlarmAck};
+pub use alarm::{Alarm, AlarmSeverity, AlarmState, AlarmAck, AlarmTrigger, DigitalAlarm};
 
 #[derive(Debug)]
 pub struct AlarmHandler {
-    path: String,
-    severity: AlarmSeverity,
-    set: i64,
-    reset: i64,
-    meas: String,
-    rx_meas: Option<broadcast::Receiver<i64>>,
-    tx_publisher: Option<mpsc::Sender<Alarm>>,
-    db: Option<DB>,
+    rx_trg: async_channel::Receiver<String>,
+    tx_publisher: mpsc::Sender<Alarm>,
+    db: DB,
+    cache: Cache,
 }
 
 impl AlarmHandler {
-    pub fn new(path: String, set: i64, reset: i64, severity: AlarmSeverity, meas: String) -> Self {
+    pub fn new(rx_trg: async_channel::Receiver<String>, tx_publisher: mpsc::Sender<Alarm>, db: DB, cache: Cache) -> Self {
         Self {
-            path: path.clone(),
-            severity,
-            set,
-            reset,
-            meas,
-            rx_meas: None,
-            tx_publisher: None,
-            db: None,
+            rx_trg,
+            tx_publisher,
+            db,
+            cache,
         }
     }
 
     pub async fn run(&mut self) {
-        let rx = self.rx_meas.as_mut().unwrap();
 
-        while let Ok(value) = rx.recv().await {
-            if value == self.set {
+        while let Ok(value) = self.rx_trg.recv().await {
+            let alm_trg: AlarmTrigger = serde_json::from_str(&value).unwrap();
+            let digi_alm = self.cache.get_alm_config(&alm_trg.alarm).await.unwrap();
+
+            if alm_trg.input == digi_alm.set {
                 let status = Alarm {
-                    name: self.path.clone(),
+                    name: digi_alm.name.clone(),
                     timestamp: Utc::now(),
-                    value: self.set,
+                    value: alm_trg.input,
                     state: AlarmState::Set,
-                    severity: self.severity.clone(),
+                    severity: digi_alm.severity,
                     ack: AlarmAck::NotAck,
                 };
-                Self::send_event(self.tx_publisher.as_ref().unwrap(), status.clone()).await;
-                self.db.as_ref().unwrap().insert_alm(status).await;
-            } else if value == self.reset {
+                Self::send_event(&self.tx_publisher, status.clone()).await;
+                self.db.insert_alm(status).await;
+            } else if alm_trg.input == digi_alm.reset {
                 let alm = self
                     .db
-                    .as_ref()
-                    .unwrap()
-                    .get_latest_alm(self.path.clone())
+                    .get_latest_alm(digi_alm.name.clone())
                     .await;
                 match alm {
                     Some(alm) => {
                         if alm.state != AlarmState::Reset {
                             let status = Alarm {
-                                name: self.path.clone(),
+                                name: digi_alm.name.clone(),
                                 timestamp: Utc::now(),
-                                value: self.reset,
+                                value: digi_alm.reset,
                                 state: AlarmState::Reset,
-                                severity: self.severity.clone(),
+                                severity: digi_alm.severity,
                                 ack: if alm.ack == AlarmAck::Ack {
                                     alm.ack
                                 } else {
                                     AlarmAck::NotAck
                                 },
                             };
-                            Self::send_event(self.tx_publisher.as_ref().unwrap(), status.clone())
+                            Self::send_event(&self.tx_publisher, status.clone())
                                 .await;
-                            self.db.as_ref().unwrap().insert_alm(status).await;
+                            self.db.insert_alm(status).await;
                         }
                     }
                     _ => {
-                        // eprintln!("Error reading the last status of {}", self.path);
+                        eprintln!("Error reading the last status of {}", digi_alm.name);
                     }
                 };
             }
         }
-    }
-
-    pub fn subscribe(&mut self, rx: broadcast::Receiver<i64>) {
-        self.rx_meas = Some(rx);
-    }
-
-    pub fn get_meas(&self) -> &str {
-        &self.meas
-    }
-    pub fn set_notifier(&mut self, tx: mpsc::Sender<Alarm>) {
-        self.tx_publisher = Some(tx);
-    }
-    pub fn set_db(&mut self, db: DB) {
-        self.db = Some(db);
-    }
-    pub fn get_path(&self) -> &str {
-        &self.path
     }
 
     async fn send_event(tx: &mpsc::Sender<Alarm>, status: Alarm) {
